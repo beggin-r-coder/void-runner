@@ -1,0 +1,155 @@
+class_name SpeedFX
+extends Node3D
+## Speed presentation layer: listens to speed, never affects collision.
+## Speed streaks around the camera, engine plume throttle, engine sparks,
+## ribbon trails and the post-process intensity.
+
+var cam: Camera3D
+var streaks: GPUParticles3D
+var dust: GPUParticles3D
+var sparks: Array[GPUParticles3D] = []
+var trails: Array[Trail3D] = []
+var flames: Array[MeshInstance3D] = []
+var quality_high: bool = true
+var _streak_mat: ShaderMaterial
+
+
+func setup(p_cam: Camera3D, mats: GameMaterials) -> void:
+	cam = p_cam
+	_streak_mat = mats.trail(Color(1, 0.9, 0.8), 2.2)
+	_streak_mat.set_shader_parameter("head_fade", 0.3)
+	streaks = _make_streaks(MeshFactory.streak(5.0, 0.035), _streak_mat, 140, 14.0, 4.5)
+	cam.add_child(streaks)
+	var dust_mat := mats.energy(Color(0.8, 0.85, 1.0), 1.2)
+	var dmesh := SphereMesh.new()
+	dmesh.radius = 0.03
+	dmesh.height = 0.06
+	dmesh.radial_segments = 4
+	dmesh.rings = 2
+	dust = _make_streaks(dmesh, dust_mat, 90, 9.0, 1.5)
+	cam.add_child(dust)
+
+
+func _make_streaks(mesh: Mesh, mat: Material, amount: int, radius: float, inner: float) -> GPUParticles3D:
+	var p := GPUParticles3D.new()
+	p.amount = amount
+	p.lifetime = 0.7
+	p.preprocess = 0.7
+	p.local_coords = true
+	p.position = Vector3(0, 0, -70)
+	p.visibility_aabb = AABB(Vector3(-30, -30, -90), Vector3(60, 60, 180))
+	var pm := ParticleProcessMaterial.new()
+	pm.emission_shape = ParticleProcessMaterial.EMISSION_SHAPE_RING
+	pm.emission_ring_axis = Vector3(0, 0, 1)
+	pm.emission_ring_radius = radius
+	pm.emission_ring_inner_radius = inner
+	pm.emission_ring_height = 30.0
+	pm.direction = Vector3(0, 0, 1)
+	pm.spread = 0.0
+	pm.initial_velocity_min = 110.0
+	pm.initial_velocity_max = 150.0
+	pm.gravity = Vector3.ZERO
+	pm.scale_min = 0.6
+	pm.scale_max = 1.3
+	p.process_material = pm
+	p.draw_pass_1 = mesh
+	p.material_override = mat
+	p.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	return p
+
+
+func attach_ship(ship_parts: Dictionary, mats: GameMaterials, world: Node3D) -> void:
+	for t in trails:
+		t.queue_free()
+	trails.clear()
+	for s in sparks:
+		s.queue_free()
+	sparks.clear()
+	flames = ship_parts["flames"]
+	var accent: Color = ship_parts["accent"]
+	var flame_col: Color = ship_parts["flame_color"]
+	for tip in ship_parts["wingtips"]:
+		var tr := Trail3D.new()
+		tr.emitter = tip
+		tr.camera = cam
+		tr.width = 0.07
+		tr.max_points = 16
+		tr.material_override = mats.trail(accent, 2.5)
+		world.add_child(tr)
+		trails.append(tr)
+	for nz in ship_parts["nozzles"]:
+		var tr2 := Trail3D.new()
+		tr2.emitter = nz
+		tr2.camera = cam
+		tr2.width = 0.22
+		tr2.max_points = 14
+		tr2.material_override = mats.trail(flame_col, 2.0)
+		world.add_child(tr2)
+		trails.append(tr2)
+		var sp := GPUParticles3D.new()
+		sp.amount = 40
+		sp.lifetime = 0.35
+		sp.local_coords = false
+		var pm := ParticleProcessMaterial.new()
+		pm.direction = Vector3(0, 0, 1)
+		pm.spread = 12.0
+		pm.initial_velocity_min = 4.0
+		pm.initial_velocity_max = 10.0
+		pm.gravity = Vector3.ZERO
+		pm.scale_min = 0.5
+		pm.scale_max = 1.0
+		pm.color = flame_col
+		sp.process_material = pm
+		var sm := SphereMesh.new()
+		sm.radius = 0.035
+		sm.height = 0.07
+		sm.radial_segments = 4
+		sm.rings = 2
+		sp.draw_pass_1 = sm
+		sp.material_override = mats.energy(flame_col.lightened(0.4), 5.0)
+		sp.visibility_aabb = AABB(Vector3(-20, -20, -20), Vector3(40, 40, 80))
+		(nz as Node3D).add_child(sp)
+		sparks.append(sp)
+
+
+func set_theme_color(c: Color) -> void:
+	_streak_mat.set_shader_parameter("color", c)
+
+
+func sample_trails() -> void:
+	for t in trails:
+		t.sample()
+
+
+func clear_trails() -> void:
+	for t in trails:
+		t.clear()
+
+
+func shift(dz: float) -> void:
+	for t in trails:
+		t.shift(dz)
+
+
+func set_ship_visible(v: bool) -> void:
+	for t in trails:
+		t.visible = v
+	for s in sparks:
+		s.emitting = v
+
+
+func update_fx(speed_t: float, flying: bool, delta: float) -> void:
+	var ratio := (0.15 + 0.85 * speed_t) if flying else 0.0
+	if not quality_high:
+		ratio *= 0.5
+	streaks.amount_ratio = ratio
+	streaks.emitting = ratio > 0.01
+	dust.amount_ratio = 0.5 + 0.5 * speed_t if flying else 0.3
+	var pm := streaks.process_material as ParticleProcessMaterial
+	pm.initial_velocity_min = 90.0 + 80.0 * speed_t
+	pm.initial_velocity_max = 130.0 + 100.0 * speed_t
+	_streak_mat.set_shader_parameter("energy", 1.2 + 2.0 * speed_t)
+	for f in flames:
+		var len := (0.8 + 1.6 * speed_t) * (1.0 + randf_range(-0.08, 0.08))
+		f.scale = f.scale.lerp(Vector3(1.0, len, 1.0), 1.0 - exp(-12.0 * delta))
+		f.position.z = 0.5 * f.scale.y

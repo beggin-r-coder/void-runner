@@ -1,0 +1,23 @@
+[gd_resource type="Resource" script_class="HandlingConfig" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://game/data/handling_config.gd" id="1_hc"]
+
+[resource]
+script = ExtResource("1_hc")
+bounds_half_width = 8.0
+bounds_half_height = 4.5
+ship_radius = 0.85
+safety_margin = 0.7
+drag_gain = 26.0
+max_lateral_speed = 28.0
+max_vertical_speed = 20.0
+lateral_accel = 150.0
+vertical_accel = 120.0
+base_speed = 35.0
+max_speed = 65.0
+speed_ramp_distance = 5000.0
+near_miss_distance = 1.7
+combo_max = 5
+combo_timeout = 4.0
+steer_response = 14.0
+reach_efficiency = 0.55

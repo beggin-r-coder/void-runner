@@ -1,0 +1,11 @@
+[gd_resource type="Resource" script_class="DifficultyProfile" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://game/data/difficulty_profile.gd" id="1_dp"]
+
+[resource]
+script = ExtResource("1_dp")
+band_distances = PackedFloat32Array(0, 600, 1600, 3000)
+density_by_band = PackedFloat32Array(0.55, 0.75, 0.95, 1.15)
+pressure_seconds = 40.0
+theme_length = 2000.0
+theme_count = 3

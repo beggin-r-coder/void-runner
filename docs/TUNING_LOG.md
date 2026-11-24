@@ -1,0 +1,17 @@
+# Tuning log
+
+All flight values live in `game/data/handling_default.tres` (HandlingConfig). Record every change.
+
+| Date | Change | Why / evidence |
+|---|---|---|
+| 2026-11-24 | Baseline: speed 35 → 65 m/s over 5000 m (`pow(t, 0.85)`), envelope ±8 m × ±4.5 m, ship radius 0.85 m | Guide p.4 initial envelope 35–65 m/s |
+| 2026-11-24 | `max_lateral_speed` 24 → **28**, `lateral_accel` 110 → **150**, vertical 17/85 → **20/120**, `steer_response` 10 → **14** | Snappier dodge = more achievable near misses; bot study showed 24/110 left routes un-followable at 65 m/s |
+| 2026-11-24 | `safety_margin` 0.4 → **0.7** m (hazards inflated by 1.55 m) | 0.4 m left no room for tracking error; bot crashed in 2–80 % of chains depending on band |
+| 2026-11-24 | `reach_efficiency` 0.7 → **0.55** (validator assumes 55 % of max lateral speed) | Validator ignored acceleration ramp; 0.55 + margin 0.7 gives 0 bot crashes in 480 chains while keeping band-3 fallbacks ≈ 4 % |
+| 2026-11-24 | Certified route made continuous across chunks (each chunk certified from the previous route's end cell) | Independent per-chunk routes jumped at chunk seams – the biggest bot failure source |
+| 2026-11-24 | Route backtracking prefers real obstacle clearance and penalises zig-zags; partial smoothing | Remaining failures were 1-cell zig-zags right beside hazards |
+| 2026-11-24 | Near-miss threshold **1.7 m** surface clearance, combo max 5, timeout 4 s, 40 pts | Guide p.3 contract; soak bot averages ~35 near misses per 2.2 km |
+| 2026-11-24 | Ring hole half-size ≥ 2.9 × 2.4 m, canyon edge growth 0.7/band, debris density 9+3·band | Keep band-3 fallback (recovery chunk) rate near 4 % |
+
+Open questions for the playtest: drag gain (26 m per screen height) on small phones; whether the
+first-run safe opening (4 recovery chunks) is too long; camera height 2.3 m vs. readability.

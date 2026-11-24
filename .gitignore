@@ -1,0 +1,13 @@
+# Godot
+.godot/
+.import/
+*.translation
+export_credentials.cfg
+# Builds / signing (keep secrets out of source control)
+builds/
+*.apk
+*.aab
+*.keystore
+*.jks
+# Captures
+captures/
