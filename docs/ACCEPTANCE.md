@@ -16,7 +16,7 @@ Last full run 2026-11-25, Godot 4.7.2-stable, Linux x86_64 headless / Xvfb + lav
 | Acquire/reset/release 1,000× with fixed capacity | `run_tests.gd` → pool | ✅ |
 | Duplicate crash callbacks rejected | `run_tests.gd` → session, `flow_smoke.gd` | ✅ |
 | Pause on focus loss, held touches cleared, retry < 2 s | `flow_smoke.gd` | ✅ (retry ≈ 50 ms desktop) |
-| 50 run/retry cycles without crash or pool growth | `--soak=50 --soak-distance=4500` | ✅ 50/50, pools leak-free |
+| 50 run/retry cycles without crash or pool growth | `--soak=50 --soak-distance=6500` (physics autopilot, collisions on, 1/60 s steps) | ⚠️ 49/50 reached 6.5 km (325 km flown, ~6,000 near misses); 1 autopilot crash at 65 m/s into a canyon pillar at 6,270 m. Pools leak-free (created = peak concurrent per key) |
 | Ad / purchase callback simulations | – | ⛔ not in prototype scope |
 | Physical-device scenarios, performance budgets | – | ⏳ needs reference phones (DEVICE_BENCHMARKS.md) |
 | 10-person unfamiliar-player gate | – | ⏳ founders to run |
