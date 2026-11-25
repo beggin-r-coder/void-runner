@@ -13,6 +13,10 @@ DashPanda Studios · Android · Godot 4.7.2 (pinned) · typed GDScript · landsc
 
 ![Fluid engine plume, consecutive frames](media/engine_plume.jpg)
 
+![Steering before vs after](media/steering_smoothness.png)
+
+▶ Same scripted drags, old vs new steering side by side: [`media/steering_before_after.mp4`](media/steering_before_after.mp4)
+
 ▶ 24-second gameplay capture: [`media/void_runner_tour.mp4`](media/void_runner_tour.mp4)
 
 ## What's in this build (prototype, phases 0–1)
@@ -29,6 +33,7 @@ DashPanda Studios · Android · Godot 4.7.2 (pinned) · typed GDScript · landsc
 | Scoring contract `floor(distance) + Σ 40 × combo`, combo ≤ 5, 4 s expiry, one payout per obstacle id | ✅ tested |
 | Near-miss feedback: popup, combo chevrons, sparks, FOV kick, hit-stop, whoosh, haptics | ✅ |
 | Fluid engine plume: swept plume mesh + flow shader (turbulence streaming back, travelling-wave undulation, breathing radius, shock diamonds, white-hot→livery gradient), soft heat sheath, tail that lags lateral motion (spring), eased length, thrust surges on launch / roll / near miss | ✅ |
+| Smooth steering: adaptive touch filter, eased braking-curve arrival, jerk-limited acceleration (RMS jerk 6× lower, shaky-thumb jitter 6× lower, overshoot halved vs legacy); spring camera with turn lead, noise-based shake, springy FOV; eased hit-stop / slow-mo | ✅ measured with `--trace-steer` |
 | Ship motion: spring-driven bank with anticipation and overshoot, yaw into turns, pitch, idle hover, differential engine flare, wingtip vapour that brightens in hard banks | ✅ |
 | Barrel roll left/right (thumb buttons, Q/E): 360 deg roll + sidestep, cooldown ring, "ROLL DODGE!" near misses | ✅ autotest stage `roll` |
 | UI kit: cut-corner glass panels, skewed buttons, letter-spaced type, segmented speed gauge, drawn switches, results cards with count-up, screen transitions, hangar showcase camera | ✅ |
@@ -134,6 +139,9 @@ ffmpeg -i /tmp/tour.avi -af volumedetect -vn -f null -
 | `--quality=low\|high`, `--reduced-motion`, `--invert-y` | Settings overrides (in-memory with `--fresh`) |
 | `--autopilot` | Runs flown by the route follower (invulnerable) |
 | `--soak=N`, `--soak-distance=M` | Soak test |
+| `--trace-steer=CSV` | Scripted touch drags (steps + shaky hold) logged per physics frame: t, target, filtered target, x, vx, ax |
+| `--legacy-steer` | Use the old (non-smoothed) steering response, for comparisons |
+| `--brake_factor= --steer_jerk= --steer_response= --input_smooth_min= --input_smooth_max=` | Override smoothing tuning without rebuilding |
 
 Latest results are recorded in `docs/ACCEPTANCE.md`; what this setup cannot verify is in
 `docs/MANUAL_TEST_PLAN.md`.

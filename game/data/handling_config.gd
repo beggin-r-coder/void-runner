@@ -20,6 +20,19 @@ extends Resource
 @export var vertical_accel: float = 120.0
 @export var invert_y: bool = false
 
+@export_group("Smoothing")
+## Smooth (jerk-limited, eased-arrival) player steering. false = legacy response.
+@export var smooth_steering: bool = true
+## Adaptive input filter: slow rate for tiny jitter, fast rate for big moves (1/s).
+@export var input_smooth_min: float = 16.0
+@export var input_smooth_max: float = 48.0
+## Distance (m) at which the filter reaches its fast rate.
+@export var input_smooth_span: float = 1.5
+## Fraction of lateral acceleration used for the eased braking curve.
+@export var brake_factor: float = 0.55
+## Max rate of change of acceleration (m/s^3): removes snap starts and stops.
+@export var steer_jerk: float = 2400.0
+
 @export_group("Speed")
 @export var base_speed: float = 35.0
 @export var max_speed: float = 65.0
@@ -41,8 +54,8 @@ extends Resource
 @export var pitch_max_deg: float = 16.0
 @export var yaw_max_deg: float = 9.0
 ## Spring that drives the visual tilt: lower damping = livelier overshoot.
-@export var tilt_stiffness: float = 140.0
-@export var tilt_damping: float = 0.62
+@export var tilt_stiffness: float = 120.0
+@export var tilt_damping: float = 0.74
 ## Extra tilt from lateral acceleration (anticipation), in seconds.
 @export var tilt_anticipation: float = 0.06
 @export var hover_amplitude: float = 0.07

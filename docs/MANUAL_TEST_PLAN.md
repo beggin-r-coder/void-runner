@@ -6,6 +6,7 @@ every screen renders. It runs on software rendering with no speakers and no fing
 | Area | Why automation can't tell | What to do on a device |
 |---|---|---|
 | **Touch feel** | Synthetic drags have perfect precision and zero latency | Is 26 m per screen-height drag gain right on a 6" phone? Does the ship feel like it follows the thumb? Try left- and right-handed, thumb near the screen edge (edge re-anchoring) |
+| **Smoothness vs responsiveness** | The trace measures jerk and lag, not how they feel | Does steering feel fluid but still precise in tight gaps? If floaty, raise `steer_jerk` / lower `input_smooth_min`; if twitchy, the reverse. Compare against `--legacy-steer` |
 | **Roll buttons + steering together** | Simulated input can't reproduce two thumbs | While dragging with one thumb, tap ROLL with the other: does it fire every time, never steal the drag, never trigger twice? Are the buttons in comfortable thumb reach on 6\" and 6.7\" phones? |
 | **Reaction window at 65 m/s** | The bot reacts instantly | Can a new player read and dodge hazards in Silent Spires at top speed? Watch the 10-person gate (≥8 start unaided, ≥7 know why they died, ≥6 replay ×3) |
 | **Performance** | lavapipe/llvmpipe is a CPU rasteriser, nothing like a phone GPU | Fill `DEVICE_BENCHMARKS.md`: p95 frame time Low/High, worst frame, PSS, thermal after 20 min, on 4/6/8 GB phones. Compare Mobile vs Compatibility renderer on the 4 GB phone |

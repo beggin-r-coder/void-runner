@@ -73,6 +73,12 @@ func setup(p_game: Node) -> void:
 		game._build_ship(id)
 	if automated:
 		game.pause_on_focus_loss = false
+	if flags.has("legacy-steer"):
+		game.cfg.smooth_steering = false
+	# tuning overrides for HandlingConfig smoothing (used with --trace-steer)
+	for key in ["brake_factor", "steer_jerk", "steer_response", "input_smooth_min", "input_smooth_max"]:
+		if flags.has(key):
+			game.cfg.set(key, float(flags[key]))
 	if flags.has("autopilot"):
 		game.autopilot_runs = true
 		game.invulnerable_runs = true
@@ -89,6 +95,8 @@ func setup(p_game: Node) -> void:
 		game.distance_cap = _soak_distance
 		game.session.state_changed.connect(_on_soak_state)
 		_start_soak.call_deferred()
+	elif flags.has("trace-steer"):
+		_trace_steer.call_deferred()
 	elif flags.has("autotest"):
 		_autotest.call_deferred()
 	elif flags.has("shots"):
@@ -399,6 +407,56 @@ func _autotest() -> void:
 	var live := await _wait(func() -> bool: return g.session.state == RunSession.State.RUNNING, 10.0)
 	status(16, countdown and live and ui.hud.visible)
 	await _stop_if_until(16)
+
+
+# --- steering trace (smoothness measurement) -------------------------------------
+
+var _trace_rows: PackedStringArray = PackedStringArray()
+var _tracing: bool = false
+var _trace_t: float = 0.0
+
+
+func _physics_process(delta: float) -> void:
+	if not _tracing:
+		return
+	var sh: FlightController = game.ship
+	_trace_t += delta
+	var a: float = (sh.lateral_vel.x - float(get_meta("pv", 0.0))) / delta
+	set_meta("pv", sh.lateral_vel.x)
+	_trace_rows.append("%.4f,%.4f,%.4f,%.4f,%.3f,%.3f" % [_trace_t, sh.target.x, sh._target_f.x, sh.position.x, sh.lateral_vel.x, a])
+
+
+## Scripted touch drags (step moves + a jittery hold), logged every physics frame.
+func _trace_steer() -> void:
+	var g := game
+	Save.data["tutorial_done"] = true
+	g.invulnerable_runs = true
+	g._start_run()
+	await _wait(func() -> bool: return g.session.state == RunSession.State.RUNNING, 10.0)
+	var vp: Viewport = g.get_viewport()
+	var vsize: Vector2 = vp.get_visible_rect().size
+	var tf: Transform2D = vp.get_screen_transform()
+	var m2px: float = vsize.y / float(g.cfg.drag_gain)
+	var c := vsize * 0.5
+	touch(true, tf * c)
+	await _frames(3)
+	_tracing = true
+	var rng := RandomNumberGenerator.new()
+	rng.seed = 5
+	# metres of drag at each segment; last segment adds +-4 px touch noise
+	for seg in [[4.0, 1.0, 0.0], [-4.0, 1.0, 0.0], [0.0, 0.8, 0.0], [1.5, 0.8, 0.0], [1.5, 1.2, 4.0]]:
+		var t := 0.0
+		while t < float(seg[1]):
+			var jitter := Vector2(rng.randf_range(-1, 1), rng.randf_range(-1, 1)) * float(seg[2])
+			drag(tf * (c + Vector2(float(seg[0]) * m2px, 0.0) + jitter))
+			await g.get_tree().process_frame
+			t += g.get_process_delta_time()
+	_tracing = false
+	var f := FileAccess.open(str(flags["trace-steer"]), FileAccess.WRITE)
+	f.store_string("t,target,target_filtered,x,vx,ax\n" + "\n".join(_trace_rows) + "\n")
+	f.close()
+	print("[trace] %d samples -> %s (smooth_steering=%s)" % [_trace_rows.size(), flags["trace-steer"], g.cfg.smooth_steering])
+	finish(0)
 
 
 # --- single state for a screenshot -----------------------------------------------------

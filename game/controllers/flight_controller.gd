@@ -37,6 +37,9 @@ var _tilt_vel: Vector3 = Vector3.ZERO
 var _prev_lat: Vector2 = Vector2.ZERO
 var _hover_t: float = 0.0
 var roll_angle: float = 0.0
+# smooth steering state
+var _target_f: Vector2 = Vector2.ZERO
+var _acc: Vector2 = Vector2.ZERO
 
 
 func setup(p_cfg: HandlingConfig, p_input: InputRouter) -> void:
@@ -79,6 +82,8 @@ func reset_to(pos: Vector3) -> void:
 	_tilt = Vector3.ZERO
 	_tilt_vel = Vector3.ZERO
 	_prev_lat = Vector2.ZERO
+	_target_f = target
+	_acc = Vector2.ZERO
 	if visual:
 		visual.rotation = Vector3.ZERO
 		visual.visible = true
@@ -152,23 +157,32 @@ func step(delta: float) -> bool:
 			rolling = false
 			_roll_cd = cfg.roll_cooldown
 	var pos2 := Vector2(position.x, position.y)
-	var gain := follower.gain if follower != null else cfg.steer_response
-	if rolling:
-		gain *= 1.4
-	var desired := (target - pos2) * gain + _ff
-	var max_x := cfg.max_lateral_speed * boost_v
-	desired.x = clampf(desired.x, -max_x, max_x)
-	desired.y = clampf(desired.y, -cfg.max_vertical_speed, cfg.max_vertical_speed)
-	lateral_vel.x = move_toward(lateral_vel.x, desired.x, cfg.lateral_accel * boost_a * delta)
-	lateral_vel.y = move_toward(lateral_vel.y, desired.y, cfg.vertical_accel * delta)
+	var max_v := Vector2(cfg.max_lateral_speed * boost_v, cfg.max_vertical_speed)
+	var max_a := Vector2(cfg.lateral_accel * boost_a, cfg.vertical_accel)
+	if follower != null or not cfg.smooth_steering:
+		# Route follower (validated tracking) and legacy response: P + feed-forward.
+		var gain := follower.gain if follower != null else cfg.steer_response
+		if rolling:
+			gain *= 1.4
+		var desired := (target - pos2) * gain + _ff
+		desired.x = clampf(desired.x, -max_v.x, max_v.x)
+		desired.y = clampf(desired.y, -max_v.y, max_v.y)
+		lateral_vel.x = move_toward(lateral_vel.x, desired.x, max_a.x * delta)
+		lateral_vel.y = move_toward(lateral_vel.y, desired.y, max_a.y * delta)
+		_target_f = target
+		_acc = Vector2.ZERO
+	else:
+		_smooth_steer(delta, pos2, max_v, max_a)
 	var motion := Vector3(lateral_vel.x, lateral_vel.y, -forward_speed) * delta
 	var next := position + motion
 	if absf(next.x) > cfg.bounds_half_width:
 		motion.x = signf(next.x) * cfg.bounds_half_width - position.x
 		lateral_vel.x = 0.0
+		_acc.x = 0.0
 	if absf(next.y) > cfg.bounds_half_height:
 		motion.y = signf(next.y) * cfg.bounds_half_height - position.y
 		lateral_vel.y = 0.0
+		_acc.y = 0.0
 	distance_travelled += forward_speed * delta
 	if invulnerable:
 		position += motion
@@ -180,6 +194,29 @@ func step(delta: float) -> bool:
 			return false
 	_update_visual(delta)
 	return true
+
+
+## Player steering that feels fluid:
+## 1. adaptive input filter: small touch jitter is smoothed, big swipes pass quickly
+## 2. eased arrival: desired speed follows a braking curve sqrt(2*a*d), so the
+##    ship decelerates into the target instead of stopping hard
+## 3. jerk limit: acceleration itself ramps, so velocity follows S-curves
+func _smooth_steer(delta: float, pos2: Vector2, max_v: Vector2, max_a: Vector2) -> void:
+	var jump := target.distance_to(_target_f)
+	var rate := lerpf(cfg.input_smooth_min, cfg.input_smooth_max, clampf(jump / cfg.input_smooth_span, 0.0, 1.0))
+	if rolling:
+		rate = cfg.input_smooth_max * 1.5
+	_target_f = _target_f.lerp(target, 1.0 - exp(-rate * delta))
+	var e := _target_f - pos2
+	var gain := cfg.steer_response * (1.4 if rolling else 1.0)
+	var jerk := cfg.steer_jerk * (2.0 if rolling else 1.0)
+	for ax in 2:
+		var err: float = e[ax]
+		var brake := sqrt(2.0 * max_a[ax] * cfg.brake_factor * absf(err))
+		var v_des := signf(err) * minf(minf(brake, absf(err) * gain), max_v[ax])
+		var a_des := clampf((v_des - lateral_vel[ax]) * gain * 1.15, -max_a[ax], max_a[ax])
+		_acc[ax] = move_toward(_acc[ax], a_des, jerk * delta)
+		lateral_vel[ax] = clampf(lateral_vel[ax] + _acc[ax] * delta, -max_v[ax], max_v[ax])
 
 
 func _update_visual(delta: float) -> void:

@@ -55,6 +55,7 @@ var _countdown_step: int = 0
 var _crash_real_t: float = 0.0
 var _crash_reason: String = ""
 var _hitstop_until: int = 0
+var _ts_goal: float = 1.0   ## eased time-scale factor (hit-stop, crash slow-mo)
 var _run_seed: int = 0
 var _tutorial_t: float = 0.0
 var _flash: float = 0.0
@@ -294,6 +295,7 @@ func _update_theme(delta: float) -> void:
 
 func _reset_world(seed_value: int, start_distance: float = 0.0, opening: int = 2) -> void:
 	_run_seed = seed_value
+	_ts_goal = 1.0
 	Engine.time_scale = time_base
 	ship.reset_to(Vector3.ZERO)
 	ship.distance_travelled = start_distance
@@ -438,8 +440,13 @@ func _physics_process(delta: float) -> void:
 		post_mat.set_shader_parameter("flash", _flash)
 		post_mat.set_shader_parameter("flash_color", _flash_color)
 	Sfx.set_flight(speed_t, flying and st != RunSession.State.PAUSED)
-	if Time.get_ticks_msec() > _hitstop_until and Engine.time_scale < time_base and st != RunSession.State.CRASHED:
-		Engine.time_scale = time_base
+	# ease time scale toward its goal (real-time rate) - no lurching
+	if Time.get_ticks_msec() > _hitstop_until and st != RunSession.State.CRASHED:
+		_ts_goal = 1.0
+	var real_dt := delta / maxf(Engine.time_scale, 0.001) * time_base
+	var cur := Engine.time_scale / maxf(time_base, 0.001)
+	cur = lerpf(cur, _ts_goal, 1.0 - exp(-(14.0 if _ts_goal < cur else 7.0) * real_dt))
+	Engine.time_scale = time_base * cur
 
 
 func _countdown(delta: float) -> void:
@@ -513,8 +520,8 @@ func _on_near_miss(ev: Dictionary) -> void:
 	Sfx.play("whoosh", 0.9 + 0.08 * score.combo)
 	_vibrate(18)
 	if not reduced_motion:
-		Engine.time_scale = time_base * 0.8
-		_hitstop_until = Time.get_ticks_msec() + 90
+		_ts_goal = 0.82
+		_hitstop_until = Time.get_ticks_msec() + 110
 
 
 func _collect_pickups() -> void:
@@ -547,7 +554,7 @@ func _on_crash(collider: Object) -> void:
 	Sfx.cut_flight()
 	Sfx.play("boom", 1.0, -4.0)
 	_vibrate(140)
-	Engine.time_scale = time_base * (0.6 if reduced_motion else 0.3)
+	_ts_goal = 0.6 if reduced_motion else 0.3
 	_crash_real_t = 0.0
 	run_ended.emit(session.run_id, score.score(), _crash_reason)
 
@@ -556,6 +563,7 @@ func _crash_step(delta: float) -> void:
 	_crash_real_t += delta / maxf(Engine.time_scale, 0.001) * time_base
 	ship.forward_speed = move_toward(ship.forward_speed, 0.0, delta * 60.0)
 	if _crash_real_t > crash_delay:
+		_ts_goal = 1.0
 		Engine.time_scale = time_base
 		_finish_run()
 
