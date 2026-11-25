@@ -11,6 +11,8 @@ DashPanda Studios · Android · Godot 4.7.2 (pinned) · typed GDScript · landsc
 
 ![Barrel roll and banking](media/ship_motion.jpg)
 
+![Fluid engine plume, consecutive frames](media/engine_plume.jpg)
+
 ▶ 24-second gameplay capture: [`media/void_runner_tour.mp4`](media/void_runner_tour.mp4)
 
 ## What's in this build (prototype, phases 0–1)
@@ -26,6 +28,7 @@ DashPanda Studios · Android · Godot 4.7.2 (pinned) · typed GDScript · landsc
 | 3 visual sectors that cross-fade: **Crimson Reach** (alien canyon planet), **Shattered Belt** (asteroid field), **Silent Spires** (abandoned megastructure) | ✅ |
 | Scoring contract `floor(distance) + Σ 40 × combo`, combo ≤ 5, 4 s expiry, one payout per obstacle id | ✅ tested |
 | Near-miss feedback: popup, combo chevrons, sparks, FOV kick, hit-stop, whoosh, haptics | ✅ |
+| Fluid engine plume: swept plume mesh + flow shader (turbulence streaming back, travelling-wave undulation, breathing radius, shock diamonds, white-hot→livery gradient), soft heat sheath, tail that lags lateral motion (spring), eased length, thrust surges on launch / roll / near miss | ✅ |
 | Ship motion: spring-driven bank with anticipation and overshoot, yaw into turns, pitch, idle hover, differential engine flare, wingtip vapour that brightens in hard banks | ✅ |
 | Barrel roll left/right (thumb buttons, Q/E): 360 deg roll + sidestep, cooldown ring, "ROLL DODGE!" near misses | ✅ autotest stage `roll` |
 | UI kit: cut-corner glass panels, skewed buttons, letter-spaced type, segmented speed gauge, drawn switches, results cards with count-up, screen transitions, hangar showcase camera | ✅ |

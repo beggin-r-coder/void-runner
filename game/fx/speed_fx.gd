@@ -11,6 +11,18 @@ var sparks: Array[GPUParticles3D] = []
 var trails: Array[Trail3D] = []
 var flames: Array[MeshInstance3D] = []
 var quality_high: bool = true
+# fluid plume state: spring-smoothed length / throttle, lagging tail bend, surges
+var _flame_len: PackedFloat32Array = PackedFloat32Array([1.0, 1.0])
+var _flame_len_v: PackedFloat32Array = PackedFloat32Array([0.0, 0.0])
+var _throttle: float = 0.8
+var _bend: Vector2 = Vector2.ZERO
+var _bend_v: Vector2 = Vector2.ZERO
+var _surge: float = 0.0
+
+
+## Momentary thrust surge (roll, near miss, launch): longer, brighter plume.
+func surge(amount: float) -> void:
+	_surge = maxf(_surge, amount)
 var _streak_mat: ShaderMaterial
 
 
@@ -81,9 +93,10 @@ func attach_ship(ship_parts: Dictionary, mats: GameMaterials, world: Node3D) -> 
 		var tr2 := Trail3D.new()
 		tr2.emitter = nz
 		tr2.camera = cam
-		tr2.width = 0.22
-		tr2.max_points = 14
-		tr2.material_override = mats.trail(flame_col, 2.0)
+		# thin heat wisp only: the fluid plume mesh is the visible thrust
+		tr2.width = 0.07
+		tr2.max_points = 9
+		tr2.material_override = mats.trail(flame_col, 0.7)
 		world.add_child(tr2)
 		trails.append(tr2)
 		var sp := GPUParticles3D.new()
@@ -139,7 +152,8 @@ func set_ship_visible(v: bool) -> void:
 
 
 ## lateral: -1..1 normalized sideways velocity; bank: |visual roll| in radians.
-func update_fx(speed_t: float, flying: bool, delta: float, lateral: float = 0.0, bank: float = 0.0) -> void:
+## lat_vel: ship lateral velocity (m/s); roll_z: visual roll (rad) to map it into ship space.
+func update_fx(speed_t: float, flying: bool, delta: float, lateral: float = 0.0, bank: float = 0.0, lat_vel: Vector2 = Vector2.ZERO, roll_z: float = 0.0) -> void:
 	var ratio := (0.15 + 0.85 * speed_t) if flying else 0.0
 	if not quality_high:
 		ratio *= 0.5
@@ -150,14 +164,28 @@ func update_fx(speed_t: float, flying: bool, delta: float, lateral: float = 0.0,
 	pm.initial_velocity_min = 90.0 + 80.0 * speed_t
 	pm.initial_velocity_max = 130.0 + 100.0 * speed_t
 	_streak_mat.set_shader_parameter("energy", 1.2 + 2.0 * speed_t)
-	# differential thrust: the outer engine flares when turning
+	_surge = move_toward(_surge, 0.0, delta * 1.6)
+	# tail lags behind lateral motion: spring toward the opposite of velocity,
+	# expressed in the (banked / rolling) ship frame
+	var goal_bend := (-lat_vel * 0.032).rotated(-roll_z)
+	_bend_v += ((goal_bend - _bend) * 55.0 - _bend_v * 2.0 * sqrt(55.0) * 0.45) * delta
+	_bend += _bend_v * delta
+	_throttle = lerpf(_throttle, (0.75 + 0.4 * speed_t + _surge) if flying else 0.0, 1.0 - exp(-6.0 * delta))
 	for i in flames.size():
 		var f := flames[i]
 		var side := -1.0 if i == 0 else 1.0
+		# differential thrust: the outer engine flares when turning
 		var flare := maxf(0.0, -side * lateral) * 0.9
-		var len := (0.8 + 1.6 * speed_t + flare) * (1.0 + randf_range(-0.08, 0.08))
-		f.scale = f.scale.lerp(Vector3(1.0 + flare * 0.25, len, 1.0 + flare * 0.25), 1.0 - exp(-12.0 * delta))
-		f.position.z = 0.5 * f.scale.y
+		var goal := (2.3 + 2.4 * speed_t + flare * 1.4) * (1.0 + 0.6 * _surge)
+		# critically-damped-ish spring: length eases instead of snapping
+		_flame_len_v[i] += ((goal - _flame_len[i]) * 90.0 - _flame_len_v[i] * 2.0 * sqrt(90.0) * 0.8) * delta
+		_flame_len[i] += _flame_len_v[i] * delta
+		var w := 0.19 * (1.0 + flare * 0.2 + _surge * 0.15)
+		f.scale = Vector3(w, w, maxf(_flame_len[i], 0.2))
+		for m in [f.material_override, (f.get_child(0) as MeshInstance3D).material_override if f.get_child_count() > 0 else null]:
+			if m:
+				(m as ShaderMaterial).set_shader_parameter("bend", _bend)
+				(m as ShaderMaterial).set_shader_parameter("throttle", _throttle * (1.0 + flare * 0.3))
 	# wingtip vapour brightens in hard banks and rolls
 	for i in mini(2, trails.size()):
 		var m := trails[i].material_override as ShaderMaterial

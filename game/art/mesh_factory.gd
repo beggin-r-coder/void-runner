@@ -338,6 +338,34 @@ static func extrude(poly: PackedVector2Array, thickness: float) -> ArrayMesh:
 	return st.commit()
 
 
+## Engine plume: surface of revolution along +Z (nozzle at z=0, tail at z=1),
+## radius 1 at the nozzle, slight bulge just behind it, then a soft taper.
+## UV.y runs 0 (nozzle) -> 1 (tail) for the flame shader.
+static func plume(segments: int = 18, rings: int = 28) -> ArrayMesh:
+	var verts := PackedVector3Array()
+	var normals := PackedVector3Array()
+	var uvs := PackedVector2Array()
+	var indices := PackedInt32Array()
+	for j in rings + 1:
+		var t := float(j) / rings
+		var r := (1.0 + 0.22 * sin(clampf(t * 3.2, 0.0, PI))) * pow(1.0 - t, 0.65) + 0.015
+		for i in segments + 1:
+			var a := float(i) / segments * TAU
+			var n := Vector3(cos(a), sin(a), 0.0)
+			verts.append(Vector3(n.x * r, n.y * r, t))
+			normals.append(n)
+			uvs.append(Vector2(float(i) / segments, t))
+	for j in rings:
+		for i in segments:
+			var i0 := j * (segments + 1) + i
+			var i1 := i0 + 1
+			var i2 := i0 + segments + 1
+			var i3 := i2 + 1
+			var mid := (verts[i0] + verts[i3]) * 0.5
+			_quad(indices, verts, i0, i1, i3, i2, Vector3(mid.x, mid.y, 0.0))
+	return _commit(verts, normals, uvs, indices)
+
+
 ## Additive speed streak: two crossed quads along Z, UV.x along the length.
 static func streak(length: float = 4.0, width: float = 0.04) -> ArrayMesh:
 	var verts := PackedVector3Array()

@@ -85,10 +85,14 @@ func trail(color: Color, strength: float = 3.0) -> ShaderMaterial:
 	return m
 
 
-func flame(outer: Color) -> ShaderMaterial:
+func flame(outer: Color, seed_value: float = 0.0, sheath: bool = false) -> ShaderMaterial:
 	var m := ShaderMaterial.new()
 	m.shader = FLAME
 	m.set_shader_parameter("outer_color", outer)
+	m.set_shader_parameter("core_color", Color(1.0, 1.0, 1.0).lerp(outer, 0.15))
+	m.set_shader_parameter("seed", seed_value)
+	m.set_shader_parameter("sheath", 1.0 if sheath else 0.0)
+	m.set_shader_parameter("energy", 1.3 if sheath else 3.0)
 	return m
 
 

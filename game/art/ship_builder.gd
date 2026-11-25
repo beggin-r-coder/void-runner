@@ -98,7 +98,7 @@ static func build(livery_id: String, mats: GameMaterials) -> Dictionary:
 	# Engines
 	var flames: Array[MeshInstance3D] = []
 	var nozzles: Array[Node3D] = []
-	var flame_mat := mats.flame(lv["flame"])
+	var plume_mesh := MeshFactory.plume()
 	var glow_mat := mats.energy(lv["flame"], 6.0)
 	for s in [-1.0, 1.0]:
 		var nac := CylinderMesh.new()
@@ -117,22 +117,26 @@ static func build(livery_id: String, mats: GameMaterials) -> Dictionary:
 		core.radius = 0.16
 		core.height = 0.1
 		_part(root, core, glow_mat, Vector3(0.36 * s, -0.02, 1.76))
-		var plume := CylinderMesh.new()
-		plume.top_radius = 0.17
-		plume.bottom_radius = 0.02
-		plume.height = 1.0
-		plume.radial_segments = 12
-		plume.rings = 4
 		var pivot := Node3D.new()
-		pivot.position = Vector3(0.36 * s, -0.02, 1.8)
+		pivot.position = Vector3(0.36 * s, -0.02, 1.76)
 		root.add_child(pivot)
+		# core plume + wider, softer heat sheath; each engine gets its own seed
 		var flame := MeshInstance3D.new()
-		flame.mesh = plume
-		flame.material_override = flame_mat
-		flame.rotation_degrees = Vector3(90, 0, 0)
-		flame.position = Vector3(0, 0, 0.5)
+		flame.mesh = plume_mesh
+		flame.material_override = mats.flame(lv["flame"], 0.37 + s * 0.21)
+		(flame.material_override as ShaderMaterial).set_shader_parameter("radius_scale", 0.19)
+		flame.scale = Vector3(0.17, 0.17, 1.0)
 		flame.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+		flame.extra_cull_margin = 2.0
 		pivot.add_child(flame)
+		var sheath := MeshInstance3D.new()
+		sheath.mesh = plume_mesh
+		sheath.material_override = mats.flame(lv["flame"], 0.91 + s * 0.17, true)
+		(sheath.material_override as ShaderMaterial).set_shader_parameter("radius_scale", 0.19 * 1.75)
+		sheath.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+		sheath.extra_cull_margin = 2.0
+		flame.add_child(sheath)
+		sheath.scale = Vector3(1.75, 1.75, 1.2)
 		flames.append(flame)
 		nozzles.append(pivot)
 

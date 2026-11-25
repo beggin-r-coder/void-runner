@@ -17,6 +17,7 @@ All flight values live in `game/data/handling_default.tres` (HandlingConfig). Re
 | 2026-11-25 | Audio: master hard limiter (−1 dB), boom normalised and −4 dB, engine cut on crash, seamless folded loops, ambient pad on menu/results | Measured: crash clipped at 0 dBFS, boom asset itself clipped (+3.3 dB), engine/wind loops clicked once per second, results screen −64 dB (silent) |
 | 2026-11-25 | Barrel roll: 0.5 s, 4.5 m sidestep, ×1.7 lateral speed / ×2.2 accel during the roll, 0.9 s cooldown | Adds a skill dodge; only ever increases capability beyond what the fairness validator assumes, collision sphere unchanged |
 | 2026-11-25 | Visual tilt is a damped spring (k 140, damping 0.62) with 0.06 s acceleration anticipation; bank 40 → 52 deg, pitch 16, yaw 9; idle hover 7 cm | More readable, lively motion; purely visual (collision unchanged) |
+| 2026-11-25 | Engine plume rebuilt: flow shader on a swept mesh + heat sheath; length / throttle / tail-bend on springs (no per-frame randomness); nozzle ribbons reduced to thin wisps; surges 0.6 launch, 0.7 roll, 0.3+0.06·combo near miss | Old plume was a cone with per-frame random length (rigid/jittery) and its UVs put the bright end at the tail; long uniform nozzle ribbons read as rigid beams |
 
 Open questions for the playtest: is the roll cooldown (0.9 s) too generous, and are thumb roll buttons reachable without breaking the steering drag? drag gain (26 m per screen height) on small phones; whether the
 first-run safe opening (4 recovery chunks) is too long; camera height 2.3 m vs. readability.

@@ -429,7 +429,8 @@ func _physics_process(delta: float) -> void:
 	var speed_t := cfg.speed_t(ship.forward_speed)
 	cam.update_camera(delta, speed_t)
 	var flying := ship.alive
-	fx.update_fx(speed_t, flying, delta, ship.lateral_vel.x / cfg.max_lateral_speed, absf(ship.visual.rotation.z) if ship.visual else 0.0)
+	var roll_z: float = ship.visual.rotation.z if ship.visual else 0.0
+	fx.update_fx(speed_t, flying, delta, ship.lateral_vel.x / cfg.max_lateral_speed, absf(roll_z), ship.lateral_vel, roll_z)
 	ui.set_roll_ready(ship.roll_ready())
 	if high_quality:
 		post_mat.set_shader_parameter("intensity", speed_t * (0.35 if reduced_motion else 1.0) if flying else 0.0)
@@ -451,6 +452,7 @@ func _countdown(delta: float) -> void:
 			Sfx.play("beep")
 		else:
 			ui.set_countdown("GO")
+			fx.surge(0.6)
 			Sfx.play("go")
 			session.transition(RunSession.State.RUNNING)
 
@@ -486,6 +488,7 @@ func _try_roll(dir: int) -> void:
 
 
 func _on_rolled(dir: int) -> void:
+	fx.surge(0.7)
 	Sfx.play("whoosh", 1.35, -1.0)
 	cam.add_kick(4.0)
 	cam.add_shake(0.12)
@@ -502,6 +505,7 @@ func _on_near_miss(ev: Dictionary) -> void:
 		color = GameUI.GOLD
 	ui.popup("%s  +%d" % [label, pts], color)
 	burst.near_miss(ev["point"], color)
+	fx.surge(0.3 + 0.06 * score.combo)
 	cam.add_kick(5.0 + score.combo)
 	cam.add_shake(0.25)
 	_flash = 0.12
