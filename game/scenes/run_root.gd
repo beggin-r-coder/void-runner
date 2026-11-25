@@ -102,6 +102,7 @@ func _ready() -> void:
 	world.add_child(ship)
 	ship.setup(cfg, input)
 	ship.crashed.connect(_on_crash)
+	ship.rolled.connect(_on_rolled)
 	cam = ChaseCamera.new()
 	cam.name = "ChaseCamera"
 	world.add_child(cam)
@@ -198,6 +199,8 @@ func _build_ui() -> void:
 	ui.resume_pressed.connect(_resume)
 	ui.setting_changed.connect(_on_setting_changed)
 	ui.livery_selected.connect(_on_livery_selected)
+	ui.roll_pressed.connect(_try_roll)
+	ui.hangar_toggled.connect(func(open: bool) -> void: cam.framing_target = 1.0 if open else 0.0)
 
 
 # --- settings ---------------------------------------------------------------------
@@ -390,7 +393,11 @@ func _notification(what: int) -> void:
 
 func _unhandled_input(event: InputEvent) -> void:
 	# (pause / resume toggling lives in GameUI, which keeps processing while paused)
-	if event.is_action_pressed("launch"):
+	if event.is_action_pressed("roll_left"):
+		_try_roll(-1)
+	elif event.is_action_pressed("roll_right"):
+		_try_roll(1)
+	elif event.is_action_pressed("launch"):
 		if session.state == RunSession.State.MENU or session.state == RunSession.State.RESULTS:
 			_start_run()
 
@@ -422,7 +429,8 @@ func _physics_process(delta: float) -> void:
 	var speed_t := cfg.speed_t(ship.forward_speed)
 	cam.update_camera(delta, speed_t)
 	var flying := ship.alive
-	fx.update_fx(speed_t, flying, delta)
+	fx.update_fx(speed_t, flying, delta, ship.lateral_vel.x / cfg.max_lateral_speed, absf(ship.visual.rotation.z) if ship.visual else 0.0)
+	ui.set_roll_ready(ship.roll_ready())
 	if high_quality:
 		post_mat.set_shader_parameter("intensity", speed_t * (0.35 if reduced_motion else 1.0) if flying else 0.0)
 		_flash = move_toward(_flash, 0.0, delta * 3.0)
@@ -469,7 +477,19 @@ func _run_step(delta: float) -> void:
 	for ev in sensor.update(ship.position, director.plans):
 		_on_near_miss(ev)
 	_collect_pickups()
-	ui.set_hud(score.score(), score.distance, ship.forward_speed, score.combo, score.combo_timer / cfg.combo_timeout)
+	ui.set_hud(score.score(), score.distance, ship.forward_speed, score.combo, score.combo_timer / cfg.combo_timeout, cfg.speed_t(ship.forward_speed))
+
+
+func _try_roll(dir: int) -> void:
+	if session.is_live():
+		ship.roll(dir)
+
+
+func _on_rolled(dir: int) -> void:
+	Sfx.play("whoosh", 1.35, -1.0)
+	cam.add_kick(4.0)
+	cam.add_shake(0.12)
+	_vibrate(12)
 
 
 func _on_near_miss(ev: Dictionary) -> void:
@@ -477,6 +497,9 @@ func _on_near_miss(ev: Dictionary) -> void:
 	hazard_passed.emit(session.run_id, int(ev["uid"]), pts)
 	var color := GameUI.CYAN.lerp(GameUI.PINK, float(score.combo - 1) / maxf(cfg.combo_max - 1, 1))
 	var label := "NEAR MISS" if score.combo < 3 else ("RAZOR!" if score.combo < cfg.combo_max else "INSANE!")
+	if ship.rolling:
+		label = "ROLL DODGE!"
+		color = GameUI.GOLD
 	ui.popup("%s  +%d" % [label, pts], color)
 	burst.near_miss(ev["point"], color)
 	cam.add_kick(5.0 + score.combo)

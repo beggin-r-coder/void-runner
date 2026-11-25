@@ -27,9 +27,25 @@ extends Resource
 @export var countdown_speed: float = 28.0
 @export var attract_speed: float = 32.0
 
+@export_group("Barrel roll")
+## A full 360 deg roll that also sidesteps; never reduces what the validator
+## assumes the ship can do, so it can only make layouts easier.
+@export var roll_duration: float = 0.5
+@export var roll_shift: float = 4.5
+@export var roll_cooldown: float = 0.9
+@export var roll_speed_mult: float = 1.7
+@export var roll_accel_mult: float = 2.2
+
 @export_group("Presentation")
-@export var bank_max_deg: float = 40.0
-@export var pitch_max_deg: float = 12.0
+@export var bank_max_deg: float = 52.0
+@export var pitch_max_deg: float = 16.0
+@export var yaw_max_deg: float = 9.0
+## Spring that drives the visual tilt: lower damping = livelier overshoot.
+@export var tilt_stiffness: float = 140.0
+@export var tilt_damping: float = 0.62
+## Extra tilt from lateral acceleration (anticipation), in seconds.
+@export var tilt_anticipation: float = 0.06
+@export var hover_amplitude: float = 0.07
 @export var fov_base: float = 72.0
 @export var fov_boost: float = 16.0
 @export var reduced_motion_fov_boost: float = 5.0

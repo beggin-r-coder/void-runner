@@ -138,7 +138,8 @@ func set_ship_visible(v: bool) -> void:
 		s.emitting = v
 
 
-func update_fx(speed_t: float, flying: bool, delta: float) -> void:
+## lateral: -1..1 normalized sideways velocity; bank: |visual roll| in radians.
+func update_fx(speed_t: float, flying: bool, delta: float, lateral: float = 0.0, bank: float = 0.0) -> void:
 	var ratio := (0.15 + 0.85 * speed_t) if flying else 0.0
 	if not quality_high:
 		ratio *= 0.5
@@ -149,7 +150,15 @@ func update_fx(speed_t: float, flying: bool, delta: float) -> void:
 	pm.initial_velocity_min = 90.0 + 80.0 * speed_t
 	pm.initial_velocity_max = 130.0 + 100.0 * speed_t
 	_streak_mat.set_shader_parameter("energy", 1.2 + 2.0 * speed_t)
-	for f in flames:
-		var len := (0.8 + 1.6 * speed_t) * (1.0 + randf_range(-0.08, 0.08))
-		f.scale = f.scale.lerp(Vector3(1.0, len, 1.0), 1.0 - exp(-12.0 * delta))
+	# differential thrust: the outer engine flares when turning
+	for i in flames.size():
+		var f := flames[i]
+		var side := -1.0 if i == 0 else 1.0
+		var flare := maxf(0.0, -side * lateral) * 0.9
+		var len := (0.8 + 1.6 * speed_t + flare) * (1.0 + randf_range(-0.08, 0.08))
+		f.scale = f.scale.lerp(Vector3(1.0 + flare * 0.25, len, 1.0 + flare * 0.25), 1.0 - exp(-12.0 * delta))
 		f.position.z = 0.5 * f.scale.y
+	# wingtip vapour brightens in hard banks and rolls
+	for i in mini(2, trails.size()):
+		var m := trails[i].material_override as ShaderMaterial
+		m.set_shader_parameter("energy", 2.0 + clampf(bank, 0.0, 1.6) * 3.5)

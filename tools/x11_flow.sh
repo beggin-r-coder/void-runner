@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # End-to-end flow driven from OUTSIDE the engine with real X11 input (xdotool) and
 # screen grabs (ImageMagick `import -window root`): no in-engine test flags change
-# the flow. menu -> tap to launch -> tutorial -> drag steer -> Esc pause -> resume.
+# the flow. menu -> tap to launch -> tutorial -> drag steer -> roll button -> Esc pause -> resume.
 # Needs: Xvfb, xdotool, imagemagick. Usage: tools/x11_flow.sh OUT_DIR
 set -euo pipefail
 cd "$(dirname "$0")/.."
@@ -23,5 +23,6 @@ xdotool mousemove 640 300 click 1;          sleep 6; grab 2_after_tap
 xdotool mousemove 640 400 mousedown 1;      sleep 1
 xdotool mousemove 760 400;                  sleep 4; grab 3_dragging_right
 xdotool mouseup 1;                          sleep 1
+xdotool mousemove 1190 630 click 1;         sleep 0.3; grab 3b_roll_button
 xdotool key Escape;                         sleep 4; grab 4_paused
 xdotool key Escape;                         sleep 4; grab 5_resumed

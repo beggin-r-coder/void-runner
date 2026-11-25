@@ -20,7 +20,7 @@ Last full run 2026-11-25, Godot 4.7.2-stable, Linux x86_64 headless / Xvfb + lav
 | Ad / purchase callback simulations | – | ⛔ not in prototype scope |
 | Physical-device scenarios, performance budgets | – | ⏳ needs reference phones (DEVICE_BENCHMARKS.md) |
 | 10-person unfamiliar-player gate | – | ⏳ founders to run |
-| Automated playthrough (16 stages: UI clicks, drag, pause via buttons + Esc, all bands/sectors to 65 m/s, crash, results ledger, purchase refuse+succeed, settings, retry) | `-- --fresh --autotest` (and `--no-warp`) | ✅ 16/16 both modes; `--no-warp` flew 6.2 km for real, 104 near misses |
+| Automated playthrough (16 stages: UI clicks, drag, pause via buttons + Esc, all bands/sectors to 65 m/s, crash, results ledger, purchase refuse+succeed, settings, retry) | `-- --fresh --autotest` (and `--no-warp`) | ✅ 17/17 (now incl. barrel roll stage); `--no-warp` flew 6.2 km for real, 104 near misses |
 | Bot at top speed (65 m/s) | `run_tests.gd` bot survival | ✅ 250/250 (after slalom fix; was ~4 % crash) |
 | Procedural audio: finite, unclipped, audible, seamless loops, limiter | `tests/audio_check.gd` | ✅ 10/10 sounds |
 | Recorded video audio levels | Movie Maker + `volumedetect` | ✅ max −1.0 dBFS (limiter), mean −20.6 dB, 0 clipped samples |

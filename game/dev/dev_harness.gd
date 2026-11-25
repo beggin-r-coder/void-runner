@@ -12,6 +12,7 @@ extends Node
 ##   --shot=PATH        save a viewport screenshot and quit (after --state / --until is reached)
 ##   --shots=DIR        timeline tour: menu, all three sectors, crash, results (alias --capture=DIR)
 ##   --state=NAME       menu | tutorial | countdown | hud | pause | settings | hangar | results
+##                      | roll (mid barrel roll; --roll-at=0..1, --roll-dir=-1|1) | bank (hard turn)
 ##   --distance=M       start runs at this route distance (pick a sector / difficulty band)
 ##   --seed=N           deterministic run seeds
 ##   --livery=ID        nova | ember | phantom
@@ -20,7 +21,7 @@ extends Node
 ##   --soak=N           N run/retry cycles with the physics autopilot, pool leak check
 ##   --soak-distance=M  distance that counts as a survived soak run (default 2500)
 
-const STAGES := ["boot", "launch", "steer", "running", "band1", "pause", "band2", "sector2", "band3", "sector3", "loop", "crash", "results", "hangar", "settings", "retry"]
+const STAGES := ["boot", "launch", "steer", "roll", "running", "band1", "pause", "band2", "sector2", "band3", "sector3", "loop", "crash", "results", "hangar", "settings", "retry"]
 
 var game: Node  # run_root
 var flags: Dictionary = {}
@@ -284,16 +285,39 @@ func _autotest() -> void:
 	status(2, steered > 3.5, "4 m drag moved ship to x=%.2f" % steered)
 	if await _stop_if_until(2): return
 
-	# 3 running: autopilot takes over from here (route-following, NOT invulnerable)
+	# 3 roll: on-screen roll button (real click), full revolution + sidestep, cooldown, Q key
+	g.ship.target = Vector2.ZERO
+	await _wait(func() -> bool: return absf(g.ship.position.x) < 0.3, 3.0)
+	var x0: float = g.ship.position.x
+	await click(ui.buttons["hud:roll_right"])
+	var started: bool = g.ship.rolling and g.ship.roll_dir == 1
+	var min_angle := 0.0
+	var t_roll := 0.0
+	while g.ship.rolling and t_roll < 2.0:
+		min_angle = minf(min_angle, g.ship.roll_angle)
+		await g.get_tree().process_frame
+		t_roll += g.get_process_delta_time()
+	await _wait(func() -> bool: return absf(g.ship.position.x - g.ship.target.x) < 0.3, 2.0)
+	var moved: float = g.ship.position.x - x0
+	var blocked: bool = not g.ship.roll(-1)  # still cooling down
+	await _wait(func() -> bool: return g.ship.roll_ready() >= 1.0, 3.0)
+	await key(KEY_Q)
+	var q_roll: bool = g.ship.rolling and g.ship.roll_dir == -1
+	await _wait(func() -> bool: return not g.ship.rolling, 2.0)
+	var full_turn := min_angle < -TAU * 0.9
+	status(3, started and full_turn and moved > 3.5 and blocked and q_roll, "button roll=%s turn=%.0fdeg sidestep=%.2fm cooldown_blocks=%s Q_roll=%s" % [started, rad_to_deg(-min_angle), moved, blocked, q_roll])
+	if await _stop_if_until(3): return
+
+	# 4 running: autopilot takes over from here (route-following, NOT invulnerable)
 	g.ship.follower = g._follower
 	g.ship.invulnerable = false
 	var running := await _wait(func() -> bool: return g.session.state == RunSession.State.RUNNING, 20.0)
-	status(3, running)
-	if await _stop_if_until(3): return
+	status(4, running)
+	if await _stop_if_until(4): return
 
 	# 4 band 1
-	status(4, await _fly_to(g.DIFFICULTY.band_distances[1] + 20.0))
-	if await _stop_if_until(4): return
+	status(5, await _fly_to(g.DIFFICULTY.band_distances[1] + 20.0))
+	if await _stop_if_until(5): return
 
 	# 5 pause / resume via the HUD buttons
 	await click(ui.buttons["hud:II"])
@@ -305,11 +329,11 @@ func _autotest() -> void:
 	var esc_paused: bool = g.session.state == RunSession.State.PAUSED
 	await key(KEY_ESCAPE)
 	var esc_resumed: bool = g.session.state == RunSession.State.RUNNING and not g.get_tree().paused
-	status(5, paused and resumed and esc_paused and esc_resumed, "buttons paused=%s resumed=%s, esc paused=%s resumed=%s" % [paused, resumed, esc_paused, esc_resumed])
-	if await _stop_if_until(5): return
+	status(6, paused and resumed and esc_paused and esc_resumed, "buttons paused=%s resumed=%s, esc paused=%s resumed=%s" % [paused, resumed, esc_paused, esc_resumed])
+	if await _stop_if_until(6): return
 
 	# 6-10 progression: difficulty bands and sectors
-	var targets := [[6, g.DIFFICULTY.band_distances[2] + 20.0], [7, g.DIFFICULTY.theme_length + 180.0], [8, g.DIFFICULTY.band_distances[3] + 20.0], [9, g.DIFFICULTY.theme_length * 2.0 + 180.0], [10, g.DIFFICULTY.theme_length * 3.0 + 180.0]]
+	var targets := [[7, g.DIFFICULTY.band_distances[2] + 20.0], [8, g.DIFFICULTY.theme_length + 180.0], [9, g.DIFFICULTY.band_distances[3] + 20.0], [10, g.DIFFICULTY.theme_length * 2.0 + 180.0], [11, g.DIFFICULTY.theme_length * 3.0 + 180.0]]
 	for tg in targets:
 		var ok: bool = await _fly_to(tg[1])
 		var expect_theme: int = g.DIFFICULTY.theme_for(tg[1])
@@ -326,14 +350,14 @@ func _autotest() -> void:
 	g.ship.follower = null
 	g.ship.target = Vector2(g.ship.position.x, g.ship.position.y)
 	var crashed := await _wait(func() -> bool: return not g.session.is_live(), 60.0)
-	status(11, crashed, "reason=\"%s\"" % g._crash_reason)
-	if await _stop_if_until(11): return
+	status(12, crashed, "reason=\"%s\"" % g._crash_reason)
+	if await _stop_if_until(12): return
 
 	# 12 results + reward ledger
 	var at_results := await _wait(func() -> bool: return g.session.state == RunSession.State.RESULTS, 10.0)
 	var earned: int = g.score.credits_earned()
-	status(12, at_results and ui.results.visible and int(Save.data["credits"]) == credits_before + earned, "earned=%d" % earned)
-	if await _stop_if_until(12): return
+	status(13, at_results and ui.results.visible and int(Save.data["credits"]) == credits_before + earned, "earned=%d" % earned)
+	if await _stop_if_until(13): return
 
 	# 13 hangar: back to menu, open hangar, buy + equip the next livery if affordable
 	await click(ui.buttons["results:MENU"])
@@ -354,9 +378,9 @@ func _autotest() -> void:
 	var before := int(Save.data["credits"])
 	await click(ui.buttons["hangar:action"])
 	var bought: bool = Save.data["livery"] == "ember" and "ember" in Save.data["unlocked_liveries"] and int(Save.data["credits"]) == before - cost
-	status(13, ui.hangar_panel.visible and refused_ok and bought, note + ("bought + equipped EMBER for %d" % cost if bought else "purchase failed"))
+	status(14, ui.hangar_panel.visible and refused_ok and bought, note + ("bought + equipped EMBER for %d" % cost if bought else "purchase failed"))
 	await click(ui.buttons["hangar:BACK"])
-	if await _stop_if_until(13): return
+	if await _stop_if_until(14): return
 
 	# 14 settings: toggle reduced motion with a real click, verify, toggle back
 	await click(ui.buttons["menu:SETTINGS"])
@@ -365,16 +389,16 @@ func _autotest() -> void:
 	var on: bool = Save.setting("reduced_motion") == true and g.cam.reduced_motion
 	await click(toggle)
 	var off: bool = Save.setting("reduced_motion") == false and not g.cam.reduced_motion
-	status(14, ui.settings_panel.visible and on and off)
+	status(15, ui.settings_panel.visible and on and off)
 	await click(ui.buttons["settings:DONE"])
-	if await _stop_if_until(14): return
+	if await _stop_if_until(15): return
 
 	# 15 retry: second launch skips the tutorial and goes through the countdown
 	await click(ui.buttons["menu:tap"])
 	var countdown: bool = g.session.state == RunSession.State.COUNTDOWN
 	var live := await _wait(func() -> bool: return g.session.state == RunSession.State.RUNNING, 10.0)
-	status(15, countdown and live and ui.hud.visible)
-	await _stop_if_until(15)
+	status(16, countdown and live and ui.hud.visible)
+	await _stop_if_until(16)
 
 
 # --- single state for a screenshot -----------------------------------------------------
@@ -391,7 +415,7 @@ func _single_state() -> void:
 	match st:
 		"settings", "hangar":
 			g.ui.show_screen(st)
-		"tutorial", "countdown", "hud", "pause", "results":
+		"tutorial", "countdown", "hud", "pause", "results", "roll", "bank":
 			g._start_run()
 			if d > 0.0:
 				_warp_to(d)
@@ -402,10 +426,20 @@ func _single_state() -> void:
 				await _wait(func() -> bool: return false, 2.5)  # let the flight settle
 			if st == "pause":
 				g._pause()
+			elif st == "roll":
+				g.ship.follower = null
+				g.ship.roll(int(flags.get("roll-dir", "1")))
+				var stop_at := float(flags.get("roll-at", "0.45"))
+				await _wait(func() -> bool: return g.ship._roll_t >= stop_at * g.cfg.roll_duration, 2.0)
+			elif st == "bank":
+				g.ship.follower = null
+				g.ship.target = Vector2(-7.5 if g.ship.position.x > 0.0 else 7.5, g.ship.position.y)
+				await _wait(func() -> bool: return absf(g.ship.lateral_vel.x) > g.cfg.max_lateral_speed * 0.8, 2.0)
 			elif st == "results":
 				_crash_into_nearest()
 				await _wait(func() -> bool: return g.session.state == RunSession.State.RESULTS, 10.0)
-	await _frames(20)
+	if st not in ["roll", "bank"]:
+		await _frames(20)
 	if flags.has("shot"):
 		await _shot(str(flags["shot"]))
 		finish(0)
@@ -438,12 +472,16 @@ func _tour() -> void:
 	var steps := [
 		[2.5, "shot", "01_menu"],
 		[2.6, "start"],
+		[5.6, "roll", 1],
 		[7.0, "shot", "02_crimson_reach"],
+		[7.6, "roll", -1],
 		[8.5, "shot", "03_crimson_reach_b"],
 		[8.6, "warp", 2050.0],
+		[11.8, "roll", 1],
 		[13.0, "shot", "04_shattered_belt"],
 		[14.5, "shot", "05_shattered_belt_b"],
 		[14.6, "warp", 4050.0],
+		[17.6, "roll", -1],
 		[19.0, "shot", "06_silent_spires"],
 		[20.5, "shot", "07_silent_spires_b"],
 		[20.6, "crash"],
@@ -465,6 +503,8 @@ func _tour() -> void:
 					g._start_run()
 				"warp":
 					_warp_to(float(step[2]))
+				"roll":
+					g.ship.roll(int(step[2]))
 				"crash":
 					_crash_into_nearest()
 				"quit":

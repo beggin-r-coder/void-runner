@@ -25,6 +25,8 @@ func _ready() -> void:
 	_add_key_action("steer_down", [KEY_S, KEY_DOWN])
 	_add_key_action("pause_game", [KEY_ESCAPE, KEY_P])
 	_add_key_action("launch", [KEY_SPACE, KEY_ENTER])
+	_add_key_action("roll_left", [KEY_Q])
+	_add_key_action("roll_right", [KEY_E])
 
 
 func _add_key_action(action: StringName, keys: Array) -> void:

@@ -12,6 +12,9 @@ var _shake: float = 0.0
 var _kick: float = 0.0
 var _roll: float = 0.0
 var _smoothed: Vector2 = Vector2.ZERO
+## 0 = chase view, 1 = hangar showcase framing (ship to the left of the panel)
+var framing_target: float = 0.0
+var _framing: float = 0.0
 
 
 func setup(p_ship: FlightController, p_cfg: HandlingConfig) -> void:
@@ -44,9 +47,13 @@ func update_camera(delta: float, speed_t: float) -> void:
 	var sp := ship.global_position
 	var k := 1.0 - exp(-7.0 * delta)
 	_smoothed = _smoothed.lerp(Vector2(sp.x, sp.y), k)
+	_framing = move_toward(_framing, framing_target, delta * 1.8)
+	var f := _framing * _framing * (3.0 - 2.0 * _framing)
 	var pos := Vector3(_smoothed.x * 0.82, _smoothed.y * 0.7 + offset.y, sp.z + offset.z - speed_t * 0.8)
+	pos = pos.lerp(sp + Vector3(2.6, 0.9, 4.6), f)
 	global_position = pos
 	var look := Vector3(sp.x * 0.9, sp.y * 0.8 + 0.4, sp.z - look_ahead)
+	look = look.lerp(sp + Vector3(2.2, 0.2, -1.5), f)
 	look_at(look, Vector3.UP)
 	var roll_target := 0.0 if reduced_motion else -ship.lateral_vel.x / cfg.max_lateral_speed * deg_to_rad(9.0)
 	_roll = lerpf(_roll, roll_target, k)
