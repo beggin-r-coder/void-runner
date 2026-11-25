@@ -19,12 +19,10 @@ static func build(livery_id: String, mats: GameMaterials) -> Dictionary:
 
 	var hull := StandardMaterial3D.new()
 	hull.albedo_color = lv["hull"]
-	hull.metallic = 0.45
-	hull.roughness = 0.32
+	hull.metallic = 0.2
+	hull.roughness = 0.38
 	hull.rim_enabled = true
 	hull.rim = 0.35
-	hull.clearcoat_enabled = true
-	hull.clearcoat = 0.6
 	var trim := StandardMaterial3D.new()
 	trim.albedo_color = lv["trim"]
 	trim.metallic = 0.9
@@ -152,8 +150,8 @@ static func build(livery_id: String, mats: GameMaterials) -> Dictionary:
 	# cinematic key light that follows the ship (also grazes passing hazards)
 	var key := OmniLight3D.new()
 	key.position = Vector3(0.0, 2.6, 3.2)
-	key.omni_range = 9.0
-	key.light_energy = 1.4
+	key.omni_range = 10.0
+	key.light_energy = 3.2
 	key.light_color = Color(0.95, 0.97, 1.0)
 	key.shadow_enabled = false
 	root.add_child(key)

@@ -25,6 +25,7 @@ var settings_panel: Control
 var hangar_panel: Control
 var results: Control
 var flash_rect: ColorRect
+var _dim: ColorRect
 
 var _score: Label
 var _distance: Label
@@ -34,9 +35,10 @@ var _combo_bar: ProgressBar
 var _popup: Label
 var _banner: Label
 var _countdown: Label
-var _hint: Label
+var _hint: Control
 var _menu_stats: Label
 var _tap: Label
+var _tap_pill: PanelContainer
 var _res_title: Label
 var _res_reason: Label
 var _res_stats: Label
@@ -45,6 +47,9 @@ var _hangar_name: Label
 var _hangar_action: Button
 var _hangar_index: int = 0
 var _toggles: Dictionary = {}
+## Every interactive control, keyed "screen:label" (used by the dev harness to click them).
+var buttons: Dictionary = {}
+var _building: String = ""
 var _settings_from_pause: bool = false
 var _t: float = 0.0
 var _popup_t: float = 0.0
@@ -63,6 +68,11 @@ func _ready() -> void:
 	flash_rect.color = Color(1, 1, 1, 0)
 	flash_rect.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	add_child(flash_rect)
+	_dim = ColorRect.new()
+	_dim.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	_dim.color = Color(0.0, 0.01, 0.03, 0.5)
+	_dim.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	add_child(_dim)
 	_safe = MarginContainer.new()
 	_safe.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	_safe.mouse_filter = Control.MOUSE_FILTER_IGNORE
@@ -124,6 +134,12 @@ func _make_theme() -> Theme:
 	t.set_stylebox("hover", "Button", hover)
 	t.set_stylebox("pressed", "Button", pressed)
 	t.set_stylebox("focus", "Button", StyleBoxEmpty.new())
+	var disabled := normal.duplicate() as StyleBoxFlat
+	disabled.bg_color = Color(0.02, 0.03, 0.06, 0.92)
+	disabled.border_color = Color(GOLD, 0.6)
+	disabled.shadow_size = 0
+	t.set_stylebox("disabled", "Button", disabled)
+	t.set_color("font_disabled_color", "Button", Color(GOLD, 0.95))
 	t.set_color("font_color", "Button", Color(0.92, 0.98, 1.0))
 	t.set_color("font_hover_color", "Button", Color.WHITE)
 	t.set_font_size("font_size", "Button", 28)
@@ -165,13 +181,31 @@ func _label(text: String, size: int, color: Color = Color.WHITE, outline: int = 
 	return l
 
 
+## Wraps a label in a dark rounded backing so it stays readable over bright scenery.
+func _pill(child: Control) -> PanelContainer:
+	var pc := PanelContainer.new()
+	var sb := StyleBoxFlat.new()
+	sb.bg_color = Color(0.01, 0.02, 0.05, 0.55)
+	sb.set_corner_radius_all(28)
+	sb.content_margin_left = 30
+	sb.content_margin_right = 30
+	sb.content_margin_top = 8
+	sb.content_margin_bottom = 8
+	pc.add_theme_stylebox_override("panel", sb)
+	pc.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	pc.add_child(child)
+	return pc
+
+
 func _button(text: String, cb: Callable, min_size: Vector2 = Vector2(220, 72)) -> Button:
 	var b := Button.new()
 	b.text = text
 	b.custom_minimum_size = min_size
-	b.pressed.connect(func() -> void:
+	var on_pressed := func() -> void:
 		Sfx.play("click")
-		cb.call())
+		cb.call()
+	b.pressed.connect(on_pressed)
+	buttons["%s:%s" % [_building, text]] = b
 	return b
 
 
@@ -189,10 +223,10 @@ func _place(parent: Control, child: Control, preset: int) -> Control:
 	match preset:
 		Control.PRESET_CENTER_TOP, Control.PRESET_CENTER_BOTTOM, Control.PRESET_CENTER:
 			child.grow_horizontal = Control.GROW_DIRECTION_BOTH
-		Control.PRESET_TOP_RIGHT, Control.PRESET_BOTTOM_RIGHT:
+		Control.PRESET_TOP_RIGHT, Control.PRESET_BOTTOM_RIGHT, Control.PRESET_CENTER_RIGHT:
 			child.grow_horizontal = Control.GROW_DIRECTION_BEGIN
 	match preset:
-		Control.PRESET_CENTER:
+		Control.PRESET_CENTER, Control.PRESET_CENTER_RIGHT, Control.PRESET_CENTER_LEFT:
 			child.grow_vertical = Control.GROW_DIRECTION_BOTH
 		Control.PRESET_CENTER_BOTTOM, Control.PRESET_BOTTOM_LEFT, Control.PRESET_BOTTOM_RIGHT:
 			child.grow_vertical = Control.GROW_DIRECTION_BEGIN
@@ -215,6 +249,7 @@ func _center_panel(parent: Control) -> VBoxContainer:
 # --- HUD ---------------------------------------------------------------------
 
 func _build_hud() -> void:
+	_building = "hud"
 	hud = _layer()
 	var tl := VBoxContainer.new()
 	tl.add_theme_constant_override("separation", -6)
@@ -246,24 +281,24 @@ func _build_hud() -> void:
 	_speed = _label("0 KM/H", 28, Color(0.8, 0.95, 1.0))
 	_place(hud, _speed, Control.PRESET_BOTTOM_RIGHT)
 
-	_popup = _label("", 44, CYAN, 8, Color(CYAN, 0.7))
+	_popup = _label("", 38, CYAN, 8, Color(CYAN, 0.7))
 	_popup.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	_place(hud, _popup, Control.PRESET_CENTER)
-	_popup.position.y -= 120
+	_place(hud, _popup, Control.PRESET_CENTER_TOP)
+	_popup.position.y += 78
 
 	_banner = _label("", 34, Color(1, 1, 1, 0.9), 6, Color(CYAN, 0.4))
 	_banner.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	_place(hud, _banner, Control.PRESET_CENTER_TOP)
-	_banner.position.y += 110
+	_banner.position.y += 132
 
 	_countdown = _label("", 150, Color.WHITE, 12, Color(CYAN, 0.8))
 	_countdown.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	_place(hud, _countdown, Control.PRESET_CENTER)
 
-	_hint = _label("DRAG ANYWHERE TO STEER", 36, Color.WHITE, 8, Color(CYAN, 0.6))
-	_hint.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	_place(hud, _hint, Control.PRESET_CENTER_BOTTOM)
-	_hint.position.y -= 70
+	var hint_label := _label("<   DRAG ANYWHERE TO STEER   >", 32, Color.WHITE, 6, Color(CYAN, 0.6))
+	_hint = _pill(hint_label)
+	_place(hud, _hint, Control.PRESET_CENTER_TOP)
+	_hint.position.y += 215
 	_hint.visible = false
 
 
@@ -312,6 +347,7 @@ func flash(color: Color, strength: float) -> void:
 # --- Menu --------------------------------------------------------------------
 
 func _build_menu() -> void:
+	_building = "menu"
 	menu = _layer()
 	var tap_area := Button.new()
 	tap_area.flat = true
@@ -322,6 +358,7 @@ func _build_menu() -> void:
 	tap_area.add_theme_stylebox_override("pressed", StyleBoxEmpty.new())
 	tap_area.pressed.connect(func() -> void: launch_pressed.emit())
 	menu.add_child(tap_area)
+	buttons["menu:tap"] = tap_area
 
 	var title_box := VBoxContainer.new()
 	title_box.mouse_filter = Control.MOUSE_FILTER_IGNORE
@@ -335,21 +372,22 @@ func _build_menu() -> void:
 	_place(menu, title_box, Control.PRESET_CENTER_TOP)
 	title_box.position.y += 30
 
-	_tap = _label("TAP TO LAUNCH", 40, Color.WHITE, 8, Color(CYAN, 0.7))
+	_tap = _label("TAP TO LAUNCH", 38, Color.WHITE, 6, Color(CYAN, 0.7))
 	_tap.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	_place(menu, _tap, Control.PRESET_CENTER_BOTTOM)
-	_tap.position.y -= 40
+	_tap_pill = _pill(_tap)
+	_place(menu, _tap_pill, Control.PRESET_CENTER_BOTTOM)
 
 	_menu_stats = _label("", 26, Color(0.85, 0.95, 1.0))
 	_place(menu, _menu_stats, Control.PRESET_BOTTOM_LEFT)
 
-	var buttons := VBoxContainer.new()
-	buttons.add_theme_constant_override("separation", 14)
-	buttons.add_child(_button("HANGAR", func() -> void: show_screen("hangar")))
-	buttons.add_child(_button("SETTINGS", func() -> void:
+	var col := VBoxContainer.new()
+	col.add_theme_constant_override("separation", 14)
+	var open_settings := func() -> void:
 		_settings_from_pause = false
-		show_screen("settings")))
-	_place(menu, buttons, Control.PRESET_BOTTOM_RIGHT)
+		show_screen("settings")
+	col.add_child(_button("HANGAR", func() -> void: show_screen("hangar")))
+	col.add_child(_button("SETTINGS", open_settings))
+	_place(menu, col, Control.PRESET_BOTTOM_RIGHT)
 
 
 func set_menu_stats(best: int, credits: int) -> void:
@@ -359,29 +397,24 @@ func set_menu_stats(best: int, credits: int) -> void:
 # --- Pause / settings / hangar ----------------------------------------------
 
 func _build_pause() -> void:
+	_building = "pause"
 	pause_panel = _layer()
-	var dim := ColorRect.new()
-	dim.color = Color(0, 0, 0, 0.45)
-	dim.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
-	pause_panel.add_child(dim)
 	var vb := _center_panel(pause_panel)
 	var t := _label("PAUSED", 56, Color.WHITE, 8, Color(CYAN, 0.6))
 	t.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	vb.add_child(t)
 	vb.add_child(_button("RESUME", func() -> void: resume_pressed.emit(), Vector2(320, 76)))
 	vb.add_child(_button("RESTART", func() -> void: retry_pressed.emit(), Vector2(320, 76)))
-	vb.add_child(_button("SETTINGS", func() -> void:
+	var open_settings := func() -> void:
 		_settings_from_pause = true
-		show_screen("settings"), Vector2(320, 76)))
+		show_screen("settings")
+	vb.add_child(_button("SETTINGS", open_settings, Vector2(320, 76)))
 	vb.add_child(_button("MENU", func() -> void: menu_pressed.emit(), Vector2(320, 76)))
 
 
 func _build_settings() -> void:
+	_building = "settings"
 	settings_panel = _layer()
-	var dim := ColorRect.new()
-	dim.color = Color(0, 0, 0, 0.45)
-	dim.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
-	settings_panel.add_child(dim)
 	var vb := _center_panel(settings_panel)
 	var t := _label("SETTINGS", 48, Color.WHITE, 8, Color(CYAN, 0.6))
 	t.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
@@ -391,11 +424,15 @@ func _build_settings() -> void:
 		var cbtn := CheckButton.new()
 		cbtn.text = entry[1]
 		cbtn.custom_minimum_size = Vector2(420, 56)
-		cbtn.toggled.connect(func(on: bool) -> void:
+		cbtn.set_meta("label", entry[1])
+		var on_toggled := func(on: bool) -> void:
 			Sfx.play("click")
-			setting_changed.emit(key, on))
+			_label_toggle(cbtn)
+			setting_changed.emit(key, on)
+		cbtn.toggled.connect(on_toggled)
 		vb.add_child(cbtn)
 		_toggles[key] = cbtn
+		buttons["settings:" + key] = cbtn
 	var row := HBoxContainer.new()
 	row.add_child(_label("Effects volume", 24))
 	var slider := HSlider.new()
@@ -408,8 +445,14 @@ func _build_settings() -> void:
 	row.add_child(slider)
 	vb.add_child(row)
 	_toggles["sfx_volume"] = slider
-	vb.add_child(_button("DONE", func() -> void:
-		show_screen("pause" if _settings_from_pause else "menu"), Vector2(320, 72)))
+	var done := func() -> void:
+		show_screen("pause" if _settings_from_pause else "menu")
+	vb.add_child(_button("DONE", done, Vector2(320, 72)))
+
+
+func _label_toggle(b: CheckButton) -> void:
+	b.text = "%s   %s" % [b.get_meta("label"), "ON" if b.button_pressed else "OFF"]
+	b.add_theme_color_override("font_color", Color.WHITE if b.button_pressed else Color(0.7, 0.78, 0.85))
 
 
 func sync_settings(s: Dictionary) -> void:
@@ -418,9 +461,12 @@ func sync_settings(s: Dictionary) -> void:
 	(_toggles["high_quality"] as CheckButton).set_pressed_no_signal(str(s.get("quality", "high")) == "high")
 	(_toggles["haptics"] as CheckButton).set_pressed_no_signal(bool(s.get("haptics", true)))
 	(_toggles["sfx_volume"] as HSlider).set_value_no_signal(float(s.get("sfx_volume", 0.9)))
+	for k in ["reduced_motion", "invert_y", "high_quality", "haptics"]:
+		_label_toggle(_toggles[k])
 
 
 func _build_hangar() -> void:
+	_building = "hangar"
 	hangar_panel = _layer()
 	var vb := VBoxContainer.new()
 	vb.alignment = BoxContainer.ALIGNMENT_CENTER
@@ -439,9 +485,13 @@ func _build_hangar() -> void:
 	row.add_child(_button(">", func() -> void: _cycle_livery(1), Vector2(80, 76)))
 	vb.add_child(row)
 	_hangar_action = _button("EQUIPPED", func() -> void: _hangar_act(), Vector2(320, 76))
+	buttons["hangar:action"] = _hangar_action
 	vb.add_child(_hangar_action)
 	vb.add_child(_button("BACK", func() -> void: show_screen("menu"), Vector2(320, 72)))
-	_place(hangar_panel, vb, Control.PRESET_CENTER_BOTTOM)
+	var pc := PanelContainer.new()
+	pc.add_child(vb)
+	_place(hangar_panel, pc, Control.PRESET_CENTER_RIGHT)
+	pc.grow_vertical = Control.GROW_DIRECTION_BOTH
 
 
 func refresh_hangar() -> void:
@@ -484,12 +534,8 @@ func _hangar_act() -> void:
 # --- Results -----------------------------------------------------------------
 
 func _build_results() -> void:
+	_building = "results"
 	results = _layer()
-	var dim := ColorRect.new()
-	dim.color = Color(0, 0, 0, 0.35)
-	dim.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
-	dim.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	results.add_child(dim)
 	var vb := _center_panel(results)
 	_res_title = _label("HULL BREACH", 64, Color(1.0, 0.45, 0.35), 8, Color(1.0, 0.3, 0.2, 0.7))
 	_res_title.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
@@ -529,6 +575,7 @@ func show_screen(screen_name: String) -> void:
 	settings_panel.visible = screen_name == "settings"
 	hangar_panel.visible = screen_name == "hangar"
 	results.visible = screen_name == "results"
+	_dim.visible = screen_name in ["pause", "settings", "results"]
 	if screen_name == "hangar":
 		_hangar_index = maxi(ShipBuilder.ORDER.find(Save.data["livery"]), 0)
 		refresh_hangar()
@@ -538,10 +585,33 @@ func show_screen(screen_name: String) -> void:
 		_countdown.text = ""
 
 
+## Esc / P / Android back toggles pause. Lives here because the UI keeps
+## processing while the tree is paused (the game root does not).
+func _unhandled_input(event: InputEvent) -> void:
+	if event.is_action_pressed("pause_game") or event.is_action_pressed("ui_cancel"):
+		_back()
+
+
+## Android back button arrives as a notification (quit_on_go_back is off).
+func _notification(what: int) -> void:
+	if what == NOTIFICATION_WM_GO_BACK_REQUEST:
+		_back()
+
+
+func _back() -> void:
+	if pause_panel.visible:
+		resume_pressed.emit()
+	elif hud.visible:
+		pause_pressed.emit()
+	elif settings_panel.visible or hangar_panel.visible:
+		show_screen("pause" if settings_panel.visible and _settings_from_pause else "menu")
+	get_viewport().set_input_as_handled()
+
+
 func _process(delta: float) -> void:
 	_t += delta
 	if _tap and menu.visible:
-		_tap.modulate.a = 0.55 + 0.45 * sin(_t * 3.0)
+		_tap_pill.modulate.a = 0.8 + 0.2 * sin(_t * 3.0)
 	if _popup_t > 0.0:
 		_popup_t = maxf(_popup_t - delta * 1.2, 0.0)
 		_popup.modulate.a = clampf(_popup_t * 2.0, 0.0, 1.0)

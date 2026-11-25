@@ -4,8 +4,13 @@ extends Node
 ## without third-party assets. Swap buffers for licensed audio later.
 
 const RATE := 22050
+const LOOP_FADE := 1200
 
 var _buffers: Dictionary = {}
+## Raw float samples per sound, kept for offline checks (tests/audio_check.gd).
+var raw: Dictionary = {}
+var _ambient: AudioStreamPlayer
+var _ambient_target_db := -80.0
 var _engine: AudioStreamPlayer
 var _wind: AudioStreamPlayer
 var _one_shots: Array[AudioStreamPlayer] = []
@@ -17,17 +22,25 @@ var _wind_target_db := -80.0
 
 func _ready() -> void:
 	process_mode = Node.PROCESS_MODE_ALWAYS
+	# Master safety limiter: stacked one-shots (crash boom on a full-speed engine)
+	# must never clip the output.
+	if AudioServer.get_bus_effect_count(0) == 0:
+		var lim := AudioEffectHardLimiter.new()
+		lim.ceiling_db = -1.0
+		AudioServer.add_bus_effect(0, lim)
 	var rng := RandomNumberGenerator.new()
 	rng.seed = 1337
-	_buffers["engine"] = _wav(_synth_engine(rng), true)
-	_buffers["wind"] = _wav(_synth_wind(rng), true)
-	_buffers["whoosh"] = _wav(_synth_whoosh(rng), false)
-	_buffers["boom"] = _wav(_synth_boom(rng), false)
-	_buffers["chime"] = _wav(_synth_chime(), false)
-	_buffers["beep"] = _wav(_synth_tone(660.0, 0.12, 0.5), false)
-	_buffers["go"] = _wav(_synth_tone(990.0, 0.3, 0.5), false)
-	_buffers["click"] = _wav(_synth_tone(1400.0, 0.04, 0.35), false)
-	_buffers["warn"] = _wav(_synth_warn(), false)
+	_buffers["engine"] = _wav(_keep("engine", _fold_loop(_synth_engine(rng), LOOP_FADE)), true)
+	_buffers["wind"] = _wav(_keep("wind", _fold_loop(_synth_wind(rng), LOOP_FADE)), true)
+	_buffers["whoosh"] = _wav(_keep("whoosh", _synth_whoosh(rng)), false)
+	_buffers["boom"] = _wav(_keep("boom", _normalize(_synth_boom(rng), 0.89)), false)
+	_buffers["chime"] = _wav(_keep("chime", _synth_chime()), false)
+	_buffers["beep"] = _wav(_keep("beep", _synth_tone(660.0, 0.12, 0.5)), false)
+	_buffers["go"] = _wav(_keep("go", _synth_tone(990.0, 0.3, 0.5)), false)
+	_buffers["click"] = _wav(_keep("click", _synth_tone(1400.0, 0.04, 0.35)), false)
+	_buffers["warn"] = _wav(_keep("warn", _synth_warn()), false)
+	_buffers["ambient"] = _wav(_keep("ambient", _fold_loop(_synth_ambient(), LOOP_FADE)), true)
+	_ambient = _player("ambient")
 	_engine = _player("engine")
 	_wind = _player("wind")
 	for i in 8:
@@ -49,6 +62,7 @@ func _process(delta: float) -> void:
 	var k := 1.0 - exp(-6.0 * delta)
 	_engine.volume_db = lerpf(_engine.volume_db, _engine_target_db, k)
 	_wind.volume_db = lerpf(_wind.volume_db, _wind_target_db, k)
+	_ambient.volume_db = lerpf(_ambient.volume_db, _ambient_target_db, 1.0 - exp(-1.5 * delta))
 
 
 ## speed_t: 0..1 normalized speed; active: whether the engine should be audible.
@@ -73,6 +87,48 @@ func play(name: String, pitch: float = 1.0, gain_db: float = 0.0) -> void:
 
 # --- synthesis -------------------------------------------------------------
 
+## Seamless loop: the generator renders LOOP_FADE extra samples past the loop
+## length; that tail is cross-faded into the head, so sample[n-1] -> sample[0]
+## continues the original signal with no discontinuity.
+func _fold_loop(src: PackedFloat32Array, fade: int) -> PackedFloat32Array:
+	var n := src.size() - fade
+	var out := src.slice(0, n)
+	for i in fade:
+		var f := float(i) / fade
+		out[i] = src[i] * f + src[n + i] * (1.0 - f)
+	return out
+
+
+func _normalize(src: PackedFloat32Array, peak: float) -> PackedFloat32Array:
+	var m := 0.0
+	for v in src:
+		m = maxf(m, absf(v))
+	if m <= peak or m == 0.0:
+		return src
+	var out := src.duplicate()
+	for i in out.size():
+		out[i] *= peak / m
+	return out
+
+
+func _keep(name: String, samples: PackedFloat32Array) -> PackedFloat32Array:
+	raw[name] = samples
+	return samples
+
+
+## Quiet space-pad bed for menu / results so those screens are never dead silent.
+func set_ambient(on: bool) -> void:
+	_ambient_target_db = (-20.0 + linear_to_db(maxf(volume, 0.0001))) if on else -60.0
+
+
+## Instantly silences the flight layers (crash), instead of the usual fade.
+func cut_flight() -> void:
+	_engine_target_db = -60.0
+	_wind_target_db = -60.0
+	_engine.volume_db = -30.0
+	_wind.volume_db = -30.0
+
+
 func _wav(samples: PackedFloat32Array, loop: bool) -> AudioStreamWAV:
 	var bytes := PackedByteArray()
 	bytes.resize(samples.size() * 2)
@@ -91,7 +147,7 @@ func _wav(samples: PackedFloat32Array, loop: bool) -> AudioStreamWAV:
 
 
 func _synth_engine(rng: RandomNumberGenerator) -> PackedFloat32Array:
-	var n := RATE  # 1 s loop; all partials are integer Hz so it loops cleanly
+	var n := RATE + LOOP_FADE  # 1 s loop + fold tail; partials are integer Hz
 	var out := PackedFloat32Array()
 	out.resize(n)
 	var lp := 0.0
@@ -110,7 +166,7 @@ func _synth_engine(rng: RandomNumberGenerator) -> PackedFloat32Array:
 
 
 func _synth_wind(rng: RandomNumberGenerator) -> PackedFloat32Array:
-	var n := RATE
+	var n := RATE + LOOP_FADE
 	var out := PackedFloat32Array()
 	out.resize(n)
 	var a := 0.0
@@ -120,11 +176,19 @@ func _synth_wind(rng: RandomNumberGenerator) -> PackedFloat32Array:
 		a += (w - a) * 0.25
 		b += (a - b) * 0.25
 		out[i] = (a - b) * 1.6
-	# crossfade the seam
-	var fade := 600
-	for i in fade:
-		var f := float(i) / fade
-		out[i] = out[i] * f + out[n - fade + i] * (1.0 - f)
+	return out
+
+
+func _synth_ambient() -> PackedFloat32Array:
+	# 2 s loop: 55 / 82.5 / 110 / 165 Hz all complete whole cycles, slow 0.5 Hz swell
+	var n := RATE * 2 + LOOP_FADE
+	var out := PackedFloat32Array()
+	out.resize(n)
+	for i in n:
+		var t := float(i) / RATE
+		var swell := 0.75 + 0.25 * sin(TAU * 0.5 * t)
+		var s := sin(TAU * 55.0 * t) * 0.4 + sin(TAU * 82.5 * t) * 0.25 + sin(TAU * 110.0 * t + 0.7) * 0.2 + sin(TAU * 165.0 * t + 1.9) * 0.08
+		out[i] = s * swell * 0.5
 	return out
 
 

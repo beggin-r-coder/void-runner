@@ -60,15 +60,17 @@ var _tutorial_t: float = 0.0
 var _flash: float = 0.0
 var _flash_color: Color = Color.WHITE
 
-# capture / automation (see tools/capture.sh)
-var _capture_dir: String = ""
-var _capture_steps: Array = []
-var _capture_clock: float = 0.0
-var _auto_pilot_runs: bool = false
-var _soak_runs: int = 0
-var _soak_distance: float = 2500.0
-var _soak_log: Array = []
-var _soak_survived: bool = false
+# Hooks for the dev harness (game/dev/dev_harness.gd). Defaults = normal play.
+var time_base: float = 1.0           ## global time scale (autotest fast-forward)
+var autopilot_runs: bool = false     ## runs are flown by the RouteFollower
+var invulnerable_runs: bool = false  ## runs ignore collisions (screenshot tours)
+var force_seed: int = -1             ## >= 0: deterministic run seeds
+var allow_tutorial: bool = true
+var pause_on_focus_loss: bool = true
+var crash_delay: float = 1.1         ## real seconds of crash slow-mo before results
+var distance_cap: float = INF        ## end the run (as survived) at this distance
+var survived_cap: bool = false
+var dev: Node
 
 
 func _ready() -> void:
@@ -117,7 +119,11 @@ func _ready() -> void:
 	_build_ui()
 	_apply_settings()
 	session.state_changed.connect(_on_state_changed)
-	_parse_args()
+	dev = preload("res://game/dev/dev_harness.gd").new()
+	dev.name = "DevHarness"
+	add_child(dev)
+	dev.setup(self)  # parses command-line flags; may adjust hooks above
+	_apply_settings()
 	_enter_menu()
 
 
@@ -285,7 +291,7 @@ func _update_theme(delta: float) -> void:
 
 func _reset_world(seed_value: int, start_distance: float = 0.0, opening: int = 2) -> void:
 	_run_seed = seed_value
-	Engine.time_scale = 1.0
+	Engine.time_scale = time_base
 	ship.reset_to(Vector3.ZERO)
 	ship.distance_travelled = start_distance
 	ship.forward_speed = cfg.attract_speed
@@ -305,14 +311,13 @@ var _follower: RouteFollower
 
 func _enter_menu() -> void:
 	get_tree().paused = false
-	_reset_world(SeedService.fresh_seed())
+	_reset_world(_next_seed())
 	ship.follower = _follower
 	ship.invulnerable = true
 	input.reset()
 	ui.show_screen("menu")
+	Sfx.set_ambient(true)
 	ui.set_menu_stats(int(Save.data["best_score"]), int(Save.data["credits"]))
-	if _soak_runs > 0:
-		_start_run.call_deferred()
 
 
 func _go_menu() -> void:
@@ -327,15 +332,15 @@ func _start_run() -> void:
 	if session.state == RunSession.State.RESULTS:
 		session.transition(RunSession.State.MENU)
 	get_tree().paused = false
-	var tutorial := not bool(Save.data["tutorial_done"]) and _capture_dir.is_empty() and _soak_runs == 0
+	var tutorial := not bool(Save.data["tutorial_done"]) and allow_tutorial
 	# first run: a longer safe opening teaches steering before any hazard
-	_reset_world(SeedService.fresh_seed(), 0.0, 4 if tutorial else 2)
+	_reset_world(_next_seed(), 0.0, 4 if tutorial else 2)
 	if not session.start_run(tutorial):
 		return
-	ship.follower = _follower if _auto_pilot_runs else null
-	ship.invulnerable = _auto_pilot_runs and _soak_runs == 0
+	ship.follower = _follower if autopilot_runs else null
+	ship.invulnerable = invulnerable_runs
 	ship.forward_speed = cfg.countdown_speed
-	_soak_survived = false
+	survived_cap = false
 	input.reset()
 	input.touched_this_run = false
 	ui.show_screen("hud")
@@ -363,14 +368,20 @@ func _resume() -> void:
 		ui.show_screen("hud")
 
 
-func _on_state_changed(_prev: int, _cur: int) -> void:
-	pass
+func _on_state_changed(_prev: int, cur: int) -> void:
+	Sfx.set_ambient(cur in [RunSession.State.MENU, RunSession.State.RESULTS, RunSession.State.PAUSED])
+
+
+func _next_seed() -> int:
+	if force_seed >= 0:
+		return force_seed + session.run_id
+	return SeedService.fresh_seed()
 
 
 func _notification(what: int) -> void:
 	match what:
 		NOTIFICATION_APPLICATION_FOCUS_OUT, NOTIFICATION_APPLICATION_PAUSED:
-			if session.state in [RunSession.State.RUNNING, RunSession.State.COUNTDOWN, RunSession.State.TUTORIAL] and _capture_dir.is_empty():
+			if session.state in [RunSession.State.RUNNING, RunSession.State.COUNTDOWN, RunSession.State.TUTORIAL] and pause_on_focus_loss:
 				_pause()
 		NOTIFICATION_APPLICATION_FOCUS_IN, NOTIFICATION_APPLICATION_RESUMED:
 			if input:
@@ -378,12 +389,8 @@ func _notification(what: int) -> void:
 
 
 func _unhandled_input(event: InputEvent) -> void:
-	if event.is_action_pressed("pause_game"):
-		if session.state == RunSession.State.PAUSED:
-			_resume()
-		else:
-			_pause()
-	elif event.is_action_pressed("launch"):
+	# (pause / resume toggling lives in GameUI, which keeps processing while paused)
+	if event.is_action_pressed("launch"):
 		if session.state == RunSession.State.MENU or session.state == RunSession.State.RESULTS:
 			_start_run()
 
@@ -422,8 +429,8 @@ func _physics_process(delta: float) -> void:
 		post_mat.set_shader_parameter("flash", _flash)
 		post_mat.set_shader_parameter("flash_color", _flash_color)
 	Sfx.set_flight(speed_t, flying and st != RunSession.State.PAUSED)
-	if Time.get_ticks_msec() > _hitstop_until and Engine.time_scale < 1.0 and st != RunSession.State.CRASHED:
-		Engine.time_scale = 1.0
+	if Time.get_ticks_msec() > _hitstop_until and Engine.time_scale < time_base and st != RunSession.State.CRASHED:
+		Engine.time_scale = time_base
 
 
 func _countdown(delta: float) -> void:
@@ -454,8 +461,8 @@ func _run_step(delta: float) -> void:
 		return
 	score.distance = ship.distance_travelled
 	score.tick(delta)
-	if _soak_runs > 0 and score.distance >= _soak_distance:
-		_soak_survived = true
+	if score.distance >= distance_cap:
+		survived_cap = true
 		ship.alive = false
 		_on_crash(null)
 		return
@@ -479,7 +486,7 @@ func _on_near_miss(ev: Dictionary) -> void:
 	Sfx.play("whoosh", 0.9 + 0.08 * score.combo)
 	_vibrate(18)
 	if not reduced_motion:
-		Engine.time_scale = 0.8
+		Engine.time_scale = time_base * 0.8
 		_hitstop_until = Time.get_ticks_msec() + 90
 
 
@@ -510,18 +517,19 @@ func _on_crash(collider: Object) -> void:
 	_flash = 0.6
 	_flash_color = Color(1.0, 0.6, 0.35)
 	ui.flash(Color(1.0, 0.6, 0.4), 0.0 if high_quality else 0.5)
-	Sfx.play("boom")
+	Sfx.cut_flight()
+	Sfx.play("boom", 1.0, -4.0)
 	_vibrate(140)
-	Engine.time_scale = 0.6 if reduced_motion else 0.3
+	Engine.time_scale = time_base * (0.6 if reduced_motion else 0.3)
 	_crash_real_t = 0.0
 	run_ended.emit(session.run_id, score.score(), _crash_reason)
 
 
 func _crash_step(delta: float) -> void:
-	_crash_real_t += delta / maxf(Engine.time_scale, 0.01)
+	_crash_real_t += delta / maxf(Engine.time_scale, 0.001) * time_base
 	ship.forward_speed = move_toward(ship.forward_speed, 0.0, delta * 60.0)
-	if _crash_real_t > (0.05 if _soak_runs > 0 else 1.1):
-		Engine.time_scale = 1.0
+	if _crash_real_t > crash_delay:
+		Engine.time_scale = time_base
 		_finish_run()
 
 
@@ -539,25 +547,6 @@ func _finish_run() -> void:
 		reward_earned.emit(session.run_id, credits)
 	session.transition(RunSession.State.RESULTS)
 	ui.show_results(s, score.distance, score.near_miss_count, credits, _crash_reason, new_best, int(Save.data["best_score"]))
-	if _soak_runs > 0:
-		_soak_record()
-
-
-func _soak_record() -> void:
-	_soak_log.append({"run": session.run_id, "survived": _soak_survived, "distance": int(score.distance), "reason": _crash_reason, "near": score.near_miss_count, "pool_created": dresser.pool.created_count, "pool_active": dresser.pool.active_count, "chunks": director.plans.size()})
-	print("soak run %d: %s %d m, near misses %d, pool created %d active %d" % [session.run_id, "SURVIVED" if _soak_survived else "CRASHED (" + _crash_reason + ")", int(score.distance), score.near_miss_count, dresser.pool.created_count, dresser.pool.active_count])
-	if _soak_log.size() >= _soak_runs:
-		var survived := 0
-		for r in _soak_log:
-			survived += int(r["survived"])
-		var first_created: int = _soak_log[mini(4, _soak_log.size() - 1)]["pool_created"]
-		var last_created: int = _soak_log[_soak_log.size() - 1]["pool_created"]
-		print("SOAK SUMMARY: %d/%d runs reached %d m; pool created after warmup %d -> %d" % [survived, _soak_log.size(), int(_soak_distance), first_created, last_created])
-		print("POOL created/peak-concurrent per key: ", dresser.pool.stats())
-		print("POOL leak-free: ", dresser.pool.leak_free({&"obs_0": 64, &"obs_1": 96, &"obs_2": 40, &"obs_3": 12, &"orb": 48, &"dress_0": 9, &"dress_1": 9, &"dress_2": 9}))
-		get_tree().quit(0 if survived == _soak_log.size() else 2)
-	else:
-		_start_run.call_deferred()
 
 
 func _shift_origin(dz: float) -> void:
@@ -572,67 +561,3 @@ func _shift_origin(dz: float) -> void:
 func _vibrate(ms: int) -> void:
 	if haptics and OS.has_feature("mobile"):
 		Input.vibrate_handheld(ms)
-
-
-# --- automation: screenshots / attract captures ---------------------------------------
-
-func _parse_args() -> void:
-	for a in OS.get_cmdline_user_args():
-		if a.begins_with("--capture="):
-			_capture_dir = a.substr(10)
-		elif a == "--autopilot":
-			_auto_pilot_runs = true
-		elif a.begins_with("--soak="):
-			_soak_runs = int(a.substr(7))
-			_auto_pilot_runs = true
-		elif a.begins_with("--soak-distance="):
-			_soak_distance = float(a.substr(16))
-	if _capture_dir.is_empty():
-		return
-	DirAccess.make_dir_recursive_absolute(_capture_dir)
-	_auto_pilot_runs = true
-	_capture_steps = [
-		[2.5, "shot", "01_menu"],
-		[2.6, "start"],
-		[7.0, "shot", "02_crimson_reach"],
-		[8.5, "shot", "03_crimson_reach_b"],
-		[8.6, "warp", 2050.0],
-		[13.0, "shot", "04_shattered_belt"],
-		[14.5, "shot", "05_shattered_belt_b"],
-		[14.6, "warp", 4050.0],
-		[19.0, "shot", "06_silent_spires"],
-		[20.5, "shot", "07_silent_spires_b"],
-		[20.6, "crash"],
-		[20.75, "shot", "08_crash"],
-		[23.5, "shot", "09_results"],
-		[23.6, "quit"],
-	]
-
-
-func _process(delta: float) -> void:
-	if _capture_steps.is_empty():
-		return
-	_capture_clock += delta / maxf(Engine.time_scale, 0.01)
-	while not _capture_steps.is_empty() and _capture_clock >= float(_capture_steps[0][0]):
-		var step: Array = _capture_steps.pop_front()
-		match str(step[1]):
-			"shot":
-				var img := get_viewport().get_texture().get_image()
-				img.save_png("%s/%s.png" % [_capture_dir, step[2]])
-				print("captured ", step[2])
-			"start":
-				_start_run()
-			"warp":
-				var d := float(step[2])
-				director.reset(_run_seed + 1, ship.position.z, d, 1)
-				ship.distance_travelled = d
-				ship.forward_speed = director.speed_at(d)
-				_set_theme_immediate(DIFFICULTY.theme_for(d))
-				fx.clear_trails()
-			"crash":
-				ship.invulnerable = false
-				ship.follower = null
-				ship.alive = false
-				_on_crash(null)
-			"quit":
-				get_tree().quit()

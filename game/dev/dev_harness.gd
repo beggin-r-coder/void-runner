@@ -1,0 +1,500 @@
+extends Node
+## Dev / test harness, driven by command-line flags passed after `--`.
+## It is the project's test harness: keep it in the codebase (see README "Dev flags").
+##
+##   --fresh            use a throw-away save (deleted on exit); never touches the real save
+##   --save=PATH        use this save file instead (for save -> reload checks)
+##   --autotest         play the game automatically: real UI clicks, drag steering, autopilot
+##                      flight through every progression stage, crash, results, hangar purchase,
+##                      settings, retry. One "[autotest] ..." line per stage, quits with 0/1.
+##   --until=N|NAME     stop the autotest after that stage (index or name)
+##   --no-warp          autotest flies every metre instead of fast-forwarding between stages
+##   --shot=PATH        save a viewport screenshot and quit (after --state / --until is reached)
+##   --shots=DIR        timeline tour: menu, all three sectors, crash, results (alias --capture=DIR)
+##   --state=NAME       menu | tutorial | countdown | hud | pause | settings | hangar | results
+##   --distance=M       start runs at this route distance (pick a sector / difficulty band)
+##   --seed=N           deterministic run seeds
+##   --livery=ID        nova | ember | phantom
+##   --quality=low|high, --reduced-motion, --invert-y
+##   --autopilot        runs are flown by the RouteFollower (invulnerable unless --soak)
+##   --soak=N           N run/retry cycles with the physics autopilot, pool leak check
+##   --soak-distance=M  distance that counts as a survived soak run (default 2500)
+
+const STAGES := ["boot", "launch", "steer", "running", "band1", "pause", "band2", "sector2", "band3", "sector3", "loop", "crash", "results", "hangar", "settings", "retry"]
+
+var game: Node  # run_root
+var flags: Dictionary = {}
+var fresh: bool = false
+var _save_files: Array[String] = []
+var _passes: int = 0
+var _fails: int = 0
+var _t0: int = 0
+var _until: int = STAGES.size() - 1
+var _soak_log: Array = []
+var _soak_target: int = 0
+var _soak_distance: float = 2500.0
+var _warp_count: int = 0
+
+
+func setup(p_game: Node) -> void:
+	game = p_game
+	process_mode = Node.PROCESS_MODE_ALWAYS
+	for a in OS.get_cmdline_user_args():
+		if a.begins_with("--"):
+			var kv := a.substr(2).split("=", true, 1)
+			flags[kv[0]] = kv[1] if kv.size() > 1 else "true"
+	if flags.has("capture"):
+		flags["shots"] = flags["capture"]
+	if flags.is_empty():
+		return
+	var automated := flags.has("autotest") or flags.has("shots") or flags.has("soak") or flags.has("shot") or flags.has("state")
+	if flags.has("save"):
+		_use_save(str(flags["save"]), false)
+	elif flags.has("fresh") or automated:
+		fresh = true
+		_use_save("user://dev_fresh_save.json", true)
+	if flags.has("seed"):
+		game.force_seed = int(flags["seed"])
+	elif automated:
+		game.force_seed = 1234
+	var s: Dictionary = Save.data["settings"]
+	if flags.has("quality"):
+		s["quality"] = str(flags["quality"])
+	if flags.has("reduced-motion"):
+		s["reduced_motion"] = true
+	if flags.has("invert-y"):
+		s["invert_y"] = true
+	if flags.has("livery") and ShipBuilder.LIVERIES.has(str(flags["livery"])):
+		var id := str(flags["livery"])
+		Save.data["livery"] = id
+		if not id in Save.data["unlocked_liveries"]:
+			(Save.data["unlocked_liveries"] as Array).append(id)
+		game._build_ship(id)
+	if automated:
+		game.pause_on_focus_loss = false
+	if flags.has("autopilot"):
+		game.autopilot_runs = true
+		game.invulnerable_runs = true
+	if flags.has("until"):
+		var u := str(flags["until"])
+		_until = int(u) if u.is_valid_int() else maxi(STAGES.find(u), 0)
+	if flags.has("soak"):
+		_soak_target = int(flags["soak"])
+		_soak_distance = float(flags.get("soak-distance", "2500"))
+		game.autopilot_runs = true
+		game.invulnerable_runs = false
+		game.allow_tutorial = false
+		game.crash_delay = 0.05
+		game.distance_cap = _soak_distance
+		game.session.state_changed.connect(_on_soak_state)
+		_start_soak.call_deferred()
+	elif flags.has("autotest"):
+		_autotest.call_deferred()
+	elif flags.has("shots"):
+		_tour.call_deferred()
+	elif flags.has("shot") or flags.has("state"):
+		_single_state.call_deferred()
+
+
+# --- save isolation ----------------------------------------------------------------
+
+func _use_save(path: String, wipe: bool) -> void:
+	Save.path = path
+	_save_files = [path, path + ".bak", path + ".tmp"]
+	if wipe:
+		_delete_save_files()
+	Save.load_save()
+
+
+func _delete_save_files() -> void:
+	for f in _save_files:
+		if FileAccess.file_exists(f):
+			DirAccess.remove_absolute(ProjectSettings.globalize_path(f))
+
+
+func finish(code: int) -> void:
+	if fresh:
+		_delete_save_files()
+	Engine.physics_ticks_per_second = 60
+	game.get_tree().paused = false
+	Engine.time_scale = 1.0
+	game.get_tree().quit(code)
+
+
+# --- helpers ---------------------------------------------------------------------------
+
+func _fast_forward() -> void:
+	# Headless has no frame cap, so a higher time scale simply runs faster than real time.
+	# Godot scales the physics step by time_scale, so raise the tick rate by the same
+	# factor: every physics step stays exactly 1/60 s and the flight model is unchanged.
+	if DisplayServer.get_name() == "headless":
+		var ff := 6.0
+		game.time_base = ff
+		Engine.physics_ticks_per_second = int(60 * ff)
+		Engine.max_physics_steps_per_frame = 32
+		Engine.time_scale = ff
+
+
+func _frames(n: int) -> void:
+	for i in n:
+		await game.get_tree().process_frame
+
+
+## Waits (in game seconds) until cond() is true. Returns false on timeout.
+func _wait(cond: Callable, timeout: float) -> bool:
+	var t := 0.0
+	while not cond.call():
+		await game.get_tree().process_frame
+		t += game.get_process_delta_time() if not game.get_tree().paused else 1.0 / 60.0
+		if t > timeout * maxf(game.time_base, 1.0):
+			return false
+	return true
+
+
+func _screen_pos(c: Control) -> Vector2:
+	var center := c.get_global_transform_with_canvas() * (c.size * 0.5)
+	return c.get_viewport().get_screen_transform() * center
+
+
+## A real mouse click (press + release) at the control's centre. With touch emulation
+## this is exactly what a tap on a phone turns into.
+func click(c: Control) -> void:
+	var pos := _screen_pos(c)
+	for pressed in [true, false]:
+		var e := InputEventMouseButton.new()
+		e.button_index = MOUSE_BUTTON_LEFT
+		e.pressed = pressed
+		e.position = pos
+		e.global_position = pos
+		Input.parse_input_event(e)
+		await _frames(2)
+
+
+func key(code: Key) -> void:
+	for pressed in [true, false]:
+		var e := InputEventKey.new()
+		e.keycode = code
+		e.physical_keycode = code
+		e.pressed = pressed
+		Input.parse_input_event(e)
+		await _frames(2)
+
+
+func touch(pressed: bool, pos: Vector2) -> void:
+	var e := InputEventScreenTouch.new()
+	e.index = 0
+	e.pressed = pressed
+	e.position = pos
+	Input.parse_input_event(e)
+
+
+func drag(pos: Vector2) -> void:
+	var e := InputEventScreenDrag.new()
+	e.index = 0
+	e.position = pos
+	Input.parse_input_event(e)
+
+
+func status(stage: int, ok: bool, note: String = "") -> void:
+	var g := game
+	var theme_name: String = g.THEMES[maxi(g.current_theme, 0)].display_name
+	print("[autotest] stage=%d name=%s %s state=%s dist=%d score=%d combo=%d near=%d orbs=%d speed=%.1f sector=\"%s\" credits=%d chunks=%d pool_active=%d t=%.1fs%s" % [
+		stage, STAGES[stage], "OK" if ok else "FAIL", RunSession.state_name(g.session.state),
+		int(g.score.distance), g.score.score(), g.score.combo, g.score.near_miss_count, g.score.orbs,
+		g.ship.forward_speed, theme_name, int(Save.data["credits"]), g.director.plans.size(),
+		g.dresser.pool.active_count, (Time.get_ticks_msec() - _t0) / 1000.0, ("  " + note) if note != "" else ""])
+	if ok:
+		_passes += 1
+	else:
+		_fails += 1
+
+
+func _shot(path: String) -> void:
+	await RenderingServer.frame_post_draw
+	var img := game.get_viewport().get_texture().get_image()
+	DirAccess.make_dir_recursive_absolute(path.get_base_dir())
+	img.save_png(path)
+	print("[shot] ", path)
+
+
+## Jumps the route forward (fast-forward) and lets the ship fly the last stretch for real.
+func _warp_to(d: float) -> void:
+	_warp_count += 1
+	var g := game
+	g.director.reset(maxi(g.force_seed, 0) + 7919 * _warp_count, g.ship.position.z, d, 1)
+	g.ship.distance_travelled = d
+	g.ship.forward_speed = g.director.speed_at(d)
+	g.score.distance = d
+	g._set_theme_immediate(g.DIFFICULTY.theme_for(d))
+	g.fx.clear_trails()
+
+
+func _fly_to(d: float) -> bool:
+	var g := game
+	if not flags.has("no-warp") and g.ship.distance_travelled < d - 450.0:
+		_warp_to(d - 450.0)
+	return await _wait(func() -> bool: return g.ship.distance_travelled >= d or not g.session.is_live(), 240.0) and g.session.is_live()
+
+
+func _stop_if_until(stage: int) -> bool:
+	if stage < _until:
+		return false
+	if flags.has("shot"):
+		await _frames(3)
+		await _shot(str(flags["shot"]))
+	print("[autotest] stopped at --until=%s (%d passed, %d failed)" % [STAGES[stage], _passes, _fails])
+	finish(1 if _fails > 0 else 0)
+	return true
+
+
+# --- autotest --------------------------------------------------------------------------
+
+func _autotest() -> void:
+	_t0 = Time.get_ticks_msec()
+	var g := game
+	var ui: GameUI = g.ui
+	_fast_forward()
+	print("[autotest] begin seed=%d warp=%s renderer=%s" % [g.force_seed, str(not flags.has("no-warp")), RenderingServer.get_current_rendering_method()])
+	await _frames(10)
+
+	# 0 boot
+	status(0, g.session.state == RunSession.State.MENU and ui.menu.visible)
+	if await _stop_if_until(0): return
+
+	# 1 launch: tap the screen like a player
+	await click(ui.buttons["menu:tap"])
+	var first_run: bool = g.session.state == RunSession.State.TUTORIAL
+	status(1, first_run or g.session.state == RunSession.State.COUNTDOWN, "tutorial=%s" % first_run)
+	if await _stop_if_until(1): return
+
+	# 2 steer: one-thumb relative drag through the input router
+	# drag exactly 4 m worth (drag_gain metres per viewport height), in screen pixels
+	var vp: Viewport = g.get_viewport()
+	var vsize: Vector2 = vp.get_visible_rect().size
+	var tf: Transform2D = vp.get_screen_transform()
+	var c: Vector2 = tf * (vsize * 0.5)
+	var c2: Vector2 = tf * (vsize * 0.5 + Vector2(vsize.y * 4.0 / g.cfg.drag_gain, 0.0))
+	touch(true, c)
+	await _frames(2)
+	drag(c2)
+	await _wait(func() -> bool: return g.ship.position.x > 3.5, 3.0)
+	var steered: float = g.ship.position.x
+	drag(c)
+	touch(false, c)
+	status(2, steered > 3.5, "4 m drag moved ship to x=%.2f" % steered)
+	if await _stop_if_until(2): return
+
+	# 3 running: autopilot takes over from here (route-following, NOT invulnerable)
+	g.ship.follower = g._follower
+	g.ship.invulnerable = false
+	var running := await _wait(func() -> bool: return g.session.state == RunSession.State.RUNNING, 20.0)
+	status(3, running)
+	if await _stop_if_until(3): return
+
+	# 4 band 1
+	status(4, await _fly_to(g.DIFFICULTY.band_distances[1] + 20.0))
+	if await _stop_if_until(4): return
+
+	# 5 pause / resume via the HUD buttons
+	await click(ui.buttons["hud:II"])
+	var paused: bool = g.session.state == RunSession.State.PAUSED and g.get_tree().paused and ui.pause_panel.visible
+	await click(ui.buttons["pause:RESUME"])
+	var resumed: bool = g.session.state == RunSession.State.RUNNING and not g.get_tree().paused
+	# keyboard / Android-back path: Esc pauses, Esc again resumes (must work while paused)
+	await key(KEY_ESCAPE)
+	var esc_paused: bool = g.session.state == RunSession.State.PAUSED
+	await key(KEY_ESCAPE)
+	var esc_resumed: bool = g.session.state == RunSession.State.RUNNING and not g.get_tree().paused
+	status(5, paused and resumed and esc_paused and esc_resumed, "buttons paused=%s resumed=%s, esc paused=%s resumed=%s" % [paused, resumed, esc_paused, esc_resumed])
+	if await _stop_if_until(5): return
+
+	# 6-10 progression: difficulty bands and sectors
+	var targets := [[6, g.DIFFICULTY.band_distances[2] + 20.0], [7, g.DIFFICULTY.theme_length + 180.0], [8, g.DIFFICULTY.band_distances[3] + 20.0], [9, g.DIFFICULTY.theme_length * 2.0 + 180.0], [10, g.DIFFICULTY.theme_length * 3.0 + 180.0]]
+	for tg in targets:
+		var ok: bool = await _fly_to(tg[1])
+		var expect_theme: int = g.DIFFICULTY.theme_for(tg[1])
+		ok = ok and g.current_theme == expect_theme
+		status(tg[0], ok)
+		if not ok:
+			print("[autotest] run ended early: ", g._crash_reason)
+			finish(1)
+			return
+		if await _stop_if_until(tg[0]): return
+
+	# 11 crash: hands off the controls and fly straight until something is hit
+	var credits_before := int(Save.data["credits"])
+	g.ship.follower = null
+	g.ship.target = Vector2(g.ship.position.x, g.ship.position.y)
+	var crashed := await _wait(func() -> bool: return not g.session.is_live(), 60.0)
+	status(11, crashed, "reason=\"%s\"" % g._crash_reason)
+	if await _stop_if_until(11): return
+
+	# 12 results + reward ledger
+	var at_results := await _wait(func() -> bool: return g.session.state == RunSession.State.RESULTS, 10.0)
+	var earned: int = g.score.credits_earned()
+	status(12, at_results and ui.results.visible and int(Save.data["credits"]) == credits_before + earned, "earned=%d" % earned)
+	if await _stop_if_until(12): return
+
+	# 13 hangar: back to menu, open hangar, buy + equip the next livery if affordable
+	await click(ui.buttons["results:MENU"])
+	await click(ui.buttons["menu:HANGAR"])
+	await click(ui.buttons["hangar:>"])
+	var cost := int(ShipBuilder.LIVERIES["ember"]["cost"])
+	var refused_ok := true
+	var note := ""
+	if int(Save.data["credits"]) < cost:
+		# prove the refusal path first: the UNLOCK button must not spend anything
+		var have := int(Save.data["credits"])
+		await click(ui.buttons["hangar:action"])
+		refused_ok = Save.data["livery"] == "nova" and int(Save.data["credits"]) == have
+		# then top up through the real reward ledger (dev-only grant) to exercise the purchase
+		Save.grant_reward("dev:autotest:%d" % g.session.run_id, cost - have)
+		ui.refresh_hangar()
+		note = "refused at %d/%d, dev grant +%d; " % [have, cost, cost - have]
+	var before := int(Save.data["credits"])
+	await click(ui.buttons["hangar:action"])
+	var bought: bool = Save.data["livery"] == "ember" and "ember" in Save.data["unlocked_liveries"] and int(Save.data["credits"]) == before - cost
+	status(13, ui.hangar_panel.visible and refused_ok and bought, note + ("bought + equipped EMBER for %d" % cost if bought else "purchase failed"))
+	await click(ui.buttons["hangar:BACK"])
+	if await _stop_if_until(13): return
+
+	# 14 settings: toggle reduced motion with a real click, verify, toggle back
+	await click(ui.buttons["menu:SETTINGS"])
+	var toggle: CheckButton = ui.buttons["settings:reduced_motion"]
+	await click(toggle)
+	var on: bool = Save.setting("reduced_motion") == true and g.cam.reduced_motion
+	await click(toggle)
+	var off: bool = Save.setting("reduced_motion") == false and not g.cam.reduced_motion
+	status(14, ui.settings_panel.visible and on and off)
+	await click(ui.buttons["settings:DONE"])
+	if await _stop_if_until(14): return
+
+	# 15 retry: second launch skips the tutorial and goes through the countdown
+	await click(ui.buttons["menu:tap"])
+	var countdown: bool = g.session.state == RunSession.State.COUNTDOWN
+	var live := await _wait(func() -> bool: return g.session.state == RunSession.State.RUNNING, 10.0)
+	status(15, countdown and live and ui.hud.visible)
+	await _stop_if_until(15)
+
+
+# --- single state for a screenshot -----------------------------------------------------
+
+func _single_state() -> void:
+	var g := game
+	var st := str(flags.get("state", "menu"))
+	var d := float(flags.get("distance", "0"))
+	g.autopilot_runs = true
+	g.invulnerable_runs = true
+	if st != "tutorial":
+		Save.data["tutorial_done"] = true
+	await _frames(5)
+	match st:
+		"settings", "hangar":
+			g.ui.show_screen(st)
+		"tutorial", "countdown", "hud", "pause", "results":
+			g._start_run()
+			if d > 0.0:
+				_warp_to(d)
+			if st == "countdown":
+				await _frames(4)
+			else:
+				await _wait(func() -> bool: return g.session.is_live() and g.session.state != RunSession.State.COUNTDOWN, 10.0)
+				await _wait(func() -> bool: return false, 2.5)  # let the flight settle
+			if st == "pause":
+				g._pause()
+			elif st == "results":
+				_crash_into_nearest()
+				await _wait(func() -> bool: return g.session.state == RunSession.State.RESULTS, 10.0)
+	await _frames(20)
+	if flags.has("shot"):
+		await _shot(str(flags["shot"]))
+		finish(0)
+
+
+func _crash_into_nearest() -> void:
+	var g := game
+	var best: Node = null
+	var best_d := INF
+	var plan: ChunkPlan = g.director.plan_at(g.ship.position.z - 20.0)
+	if plan and plan.root:
+		for ch in plan.root.get_children():
+			if ch is ObstacleNode and ch.visible:
+				var dd: float = (ch as Node3D).global_position.distance_to(g.ship.global_position)
+				if dd < best_d:
+					best_d = dd
+					best = ch
+	g.ship.alive = false
+	g._on_crash(best)
+
+
+# --- timeline tour ------------------------------------------------------------------------
+
+func _tour() -> void:
+	var g := game
+	var dir := str(flags["shots"])
+	DirAccess.make_dir_recursive_absolute(dir)
+	g.autopilot_runs = true
+	g.invulnerable_runs = true
+	var steps := [
+		[2.5, "shot", "01_menu"],
+		[2.6, "start"],
+		[7.0, "shot", "02_crimson_reach"],
+		[8.5, "shot", "03_crimson_reach_b"],
+		[8.6, "warp", 2050.0],
+		[13.0, "shot", "04_shattered_belt"],
+		[14.5, "shot", "05_shattered_belt_b"],
+		[14.6, "warp", 4050.0],
+		[19.0, "shot", "06_silent_spires"],
+		[20.5, "shot", "07_silent_spires_b"],
+		[20.6, "crash"],
+		[20.75, "shot", "08_crash"],
+		[23.5, "shot", "09_results"],
+		[23.6, "quit"],
+	]
+	var clock := 0.0
+	while not steps.is_empty():
+		await game.get_tree().process_frame
+		clock += game.get_process_delta_time() / maxf(Engine.time_scale, 0.001)
+		while not steps.is_empty() and clock >= float(steps[0][0]):
+			var step: Array = steps.pop_front()
+			match str(step[1]):
+				"shot":
+					await _shot("%s/%s.png" % [dir, step[2]])
+				"start":
+					Save.data["tutorial_done"] = true
+					g._start_run()
+				"warp":
+					_warp_to(float(step[2]))
+				"crash":
+					_crash_into_nearest()
+				"quit":
+					finish(0)
+					return
+
+
+# --- soak ------------------------------------------------------------------------------
+
+func _start_soak() -> void:
+	_fast_forward()
+	game._start_run()
+
+
+func _on_soak_state(_prev: int, cur: int) -> void:
+	if cur != RunSession.State.RESULTS:
+		return
+	var g := game
+	var pool: NodePool = g.dresser.pool
+	_soak_log.append({"survived": g.survived_cap, "created": pool.created_count})
+	print("[soak] run %d: %s %d m, near misses %d, pool created %d active %d" % [g.session.run_id, "SURVIVED" if g.survived_cap else "CRASHED (" + g._crash_reason + ")", int(g.score.distance), g.score.near_miss_count, pool.created_count, pool.active_count])
+	if _soak_log.size() < _soak_target:
+		g._start_run.call_deferred()
+		return
+	var survived := 0
+	for r in _soak_log:
+		survived += int(r["survived"])
+	var prewarm := {&"obs_0": 64, &"obs_1": 96, &"obs_2": 40, &"obs_3": 12, &"orb": 48, &"dress_0": 9, &"dress_1": 9, &"dress_2": 9}
+	print("[soak] SUMMARY: %d/%d runs reached %d m; pool created %d -> %d" % [survived, _soak_log.size(), int(_soak_distance), _soak_log[0]["created"], _soak_log[_soak_log.size() - 1]["created"]])
+	print("[soak] pool created/peak per key: ", pool.stats())
+	var leak_free := pool.leak_free(prewarm)
+	print("[soak] pool leak-free: ", leak_free)
+	finish.call_deferred(0 if survived == _soak_log.size() and leak_free else 2)

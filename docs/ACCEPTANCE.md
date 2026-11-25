@@ -1,7 +1,7 @@
 # Acceptance evidence
 
 Attach build hash, device, seed and evidence to every result (guide p.11).
-Run on 2026-11-24, Godot 4.7.2-stable, Linux x86_64 headless (not a phone).
+Last full run 2026-11-25, Godot 4.7.2-stable, Linux x86_64 headless / Xvfb + lavapipe (not a phone).
 
 | Guide check | How | Result |
 |---|---|---|
@@ -20,3 +20,10 @@ Run on 2026-11-24, Godot 4.7.2-stable, Linux x86_64 headless (not a phone).
 | Ad / purchase callback simulations | – | ⛔ not in prototype scope |
 | Physical-device scenarios, performance budgets | – | ⏳ needs reference phones (DEVICE_BENCHMARKS.md) |
 | 10-person unfamiliar-player gate | – | ⏳ founders to run |
+| Automated playthrough (16 stages: UI clicks, drag, pause via buttons + Esc, all bands/sectors to 65 m/s, crash, results ledger, purchase refuse+succeed, settings, retry) | `-- --fresh --autotest` (and `--no-warp`) | ✅ 16/16 both modes; `--no-warp` flew 6.2 km for real, 104 near misses |
+| Bot at top speed (65 m/s) | `run_tests.gd` bot survival | ✅ 250/250 (after slalom fix; was ~4 % crash) |
+| Procedural audio: finite, unclipped, audible, seamless loops, limiter | `tests/audio_check.gd` | ✅ 10/10 sounds |
+| Recorded video audio levels | Movie Maker + `volumedetect` | ✅ max −1.0 dBFS (limiter), mean −20.6 dB, 0 clipped samples |
+| Save → reload | `--save=user://reload_check.json --autotest --until=results`, relaunch `--state=menu --shot` | ✅ menu shows BEST 9,912 / CREDITS 277 = file contents |
+| Real X11 input flow (xdotool clicks/drag/Esc) | `tools/x11_flow.sh` | ✅ after fixing Esc-resume and banner/hint overlap |
+| Renders on Mobile (Vulkan) and Compatibility (OpenGL) | `tools/shot.sh … mobile|compat` | ✅ all screens; 1280×720, 1600×720 (20:9), 854×480 |

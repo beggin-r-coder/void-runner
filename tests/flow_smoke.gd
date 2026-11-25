@@ -70,6 +70,9 @@ func _initialize() -> void:
 	check(main.session.state == RunSession.State.COUNTDOWN, "retry goes straight to COUNTDOWN (no tutorial)")
 	print("  retry transition took %d ms" % (Time.get_ticks_msec() - t0))
 	Engine.time_scale = 1.0
+	for f in [save.path, save.path + ".bak", save.path + ".tmp"]:
+		if FileAccess.file_exists(f):
+			DirAccess.remove_absolute(f)
 	print("== flow smoke: %s ==" % ("OK" if failures == 0 else "%d FAILED" % failures))
 	quit(1 if failures > 0 else 0)
 

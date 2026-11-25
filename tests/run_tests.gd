@@ -200,12 +200,17 @@ func test_bot_survival() -> void:
 	d.active_target = 6
 	d.prepared_ahead = 0
 	var cfg := HANDLING
-	for band in DIFFICULTY.band_distances.size():
+	# the four difficulty bands plus a top-speed (65 m/s) case
+	var starts: Array[float] = []
+	for bd in DIFFICULTY.band_distances:
+		starts.append(bd + 60.0)
+	starts.append(HANDLING.speed_ramp_distance + 600.0)
+	for band in starts.size():
 		var crashes := 0
 		var min_clear := INF
 		var failed_seeds: Array[int] = []
 		for s in n:
-			var start := DIFFICULTY.band_distances[band] + 60.0
+			var start := starts[band]
 			var seed_value := 5000 + s * 104729 + band
 			d.reset(seed_value, 0.0, start, 0)
 			var follower := RouteFollower.new(d)
@@ -244,7 +249,8 @@ func test_bot_survival() -> void:
 		var rate := 1.0 - float(crashes) / n
 		if not failed_seeds.is_empty():
 			print("    band %d failing seeds (generator v%d): %s" % [band, CorridorDirector.GENERATOR_VERSION, failed_seeds])
-		check(rate >= 0.995, "band %d: bot on the certified route survives %d/%d chains (>= 99.5%%)" % [band, n - crashes, n])
+		var label := ("band %d" % band) if band < DIFFICULTY.band_distances.size() else "top speed 65 m/s"
+		check(rate >= 0.995, "%s: bot on the certified route survives %d/%d chains (>= 99.5%%)" % [label, n - crashes, n])
 	d.free()
 
 
@@ -304,6 +310,10 @@ func test_save_store() -> void:
 	var first := store.grant_reward("run:1:1", 25)
 	var second := store.grant_reward("run:1:1", 25)
 	check(first and not second and store.data["credits"] == before + 25, "same reward event applied twice credits once")
+	for f2n in [store.path, store.path + ".bak", store.path + ".tmp"]:
+		if FileAccess.file_exists(f2n):
+			DirAccess.remove_absolute(f2n)
+	DirAccess.remove_absolute(dir)
 	store.free()
 
 

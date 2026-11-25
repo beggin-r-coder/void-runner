@@ -42,10 +42,18 @@ third-party assets, so the asset register is clean (`docs/ASSET_REGISTER.md`).
 Desktop controls: mouse drag = touch drag (emulated), or **WASD / arrows**. **Space** launches,
 **Esc / P** pauses.
 
-## Verify it
+## Verify it (no screen needed)
+
+Every check runs headless or on a virtual screen (Xvfb + software rendering), so an AI agent or
+CI box without a GPU can build, play and look at the game. Engine binary: set `GODOT=/path/to/godot`
+(keep it outside the repo).
 
 ```bash
 godot --headless --path . --import
+```
+
+```bash
+godot --headless --path . -- --fresh --autotest
 ```
 
 ```bash
@@ -57,23 +65,66 @@ godot --headless --path . --fixed-fps 60 --script res://tests/flow_smoke.gd
 ```
 
 ```bash
-godot --headless --path . --fixed-fps 60 -- --soak=50 --soak-distance=4500
+godot --headless --path . --script res://tests/audio_check.gd
 ```
 
 ```bash
-tools/capture.sh captures 1280x720
+godot --headless --path . -- --soak=50 --soak-distance=6500
 ```
 
-* `run_tests.gd` – scoring, near-miss integrity, state machine, seeded reproduction, reachability
-  (N seeds × 4 difficulty bands), bot survival on the certified route, pool cycling, save
-  migration/recovery/ledger, swept collision. `--only=reach,bot` runs a subset.
-* `flow_smoke.gd` – drives the real main scene with simulated touch through tutorial, pause on focus
-  loss, crash, results and retry.
-* `--soak=N` – the in-engine physics autopilot (not invulnerable) plays N run/retry cycles and checks
-  pools for leaks.
-* `capture.sh` – screenshot tour of every sector (uses Xvfb + lavapipe on headless Linux).
+```bash
+tools/shot.sh /tmp/hud.png 1280x720 mobile --state=hud --distance=2300
+```
 
-Latest results are recorded in `docs/ACCEPTANCE.md`.
+```bash
+tools/capture.sh captures 1280x720 mobile
+```
+
+```bash
+tools/x11_flow.sh /tmp/x11_flow
+```
+
+| Check | What it proves |
+|---|---|
+| `--autotest` | Plays the whole game: real UI clicks (tap to launch, pause, resume, hangar, settings), a real touch drag, Esc pause/resume, autopilot flight with collisions **on** through every difficulty band and all three sectors to top speed, a crash, the results/reward ledger, a livery purchase (refusal + success) and a retry. One `[autotest] stage=…` line per stage; exit code 0/1 |
+| `run_tests.gd` | Scoring, near-miss integrity, state machine, seeded reproduction, reachability (N seeds × 4 bands), bot survival on the certified route (4 bands + 65 m/s), pool cycling, save migration/recovery/ledger, swept collision |
+| `flow_smoke.gd` | Real main scene with simulated touch: tutorial, focus-loss pause, crash, results, retry |
+| `audio_check.gd` | Every synthesized sound is finite, unclipped, audible, loops are seamless; master limiter present |
+| `--soak=N` | N run/retry cycles flown by the physics autopilot (not invulnerable); pool leak check |
+| `shot.sh` / `capture.sh` | Screenshots of any state on Mobile (Vulkan/lavapipe) or Compatibility (`compat`, OpenGL) |
+| `x11_flow.sh` | The flow driven from **outside** the engine with real X11 mouse/keyboard (`xdotool`) and `import -window root` grabs |
+
+Video with audio (Movie Maker), then measure the audio because nobody is listening:
+
+```bash
+xvfb-run -a -s "-screen 0 1280x720x24" godot --path . --resolution 1280x720 --write-movie /tmp/tour.avi --fixed-fps 30 -- --fresh --shots=/tmp/tour_frames
+```
+
+```bash
+ffmpeg -i /tmp/tour.avi -af volumedetect -vn -f null -
+```
+
+### Dev flags (passed after `--`, read by `game/dev/dev_harness.gd`)
+
+| Flag | Effect |
+|---|---|
+| `--fresh` | Throw-away save, deleted on exit (implied by `--autotest`, `--shot(s)`, `--state`, `--soak`) |
+| `--save=PATH` | Use this save file (save → reload checks) |
+| `--autotest` | Automated playthrough described above |
+| `--until=N\|NAME` | Stop the autotest after a stage: `boot launch steer running band1 pause band2 sector2 band3 sector3 loop crash results hangar settings retry` |
+| `--no-warp` | Autotest flies every metre (default fast-forwards between stages, flying the last 450 m for real) |
+| `--shot=PATH` | Save a viewport screenshot, then quit (after `--state` or `--until`) |
+| `--shots=DIR` | Timeline tour: menu, three sectors, crash, results (alias `--capture=DIR`) |
+| `--state=NAME` | `menu tutorial countdown hud pause settings hangar results` |
+| `--distance=M` | Start runs at this route distance (sector / difficulty) |
+| `--seed=N` | Deterministic run seeds |
+| `--livery=ID` | `nova ember phantom` |
+| `--quality=low\|high`, `--reduced-motion`, `--invert-y` | Settings overrides (in-memory with `--fresh`) |
+| `--autopilot` | Runs flown by the route follower (invulnerable) |
+| `--soak=N`, `--soak-distance=M` | Soak test |
+
+Latest results are recorded in `docs/ACCEPTANCE.md`; what this setup cannot verify is in
+`docs/MANUAL_TEST_PLAN.md`.
 
 ## Project layout
 
@@ -89,6 +140,7 @@ game/art/             MeshFactory, ShipBuilder, GameMaterials, shaders/
 game/fx/              SpeedFX, Trail3D, BurstFX, NearMissSensor
 game/services/        ScoreService (only thing that turns events into points)
 game/ui/              GameUI (menu, HUD, pause, settings, hangar, results)
+game/dev/             DevHarness: command-line test flags (autotest, shots, soak)
 game/scenes/          main.tscn + run_root.gd (AppRoot/RunRoot, state machine)
 tests/ tools/ docs/ media/
 ```

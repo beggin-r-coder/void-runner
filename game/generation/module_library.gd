@@ -161,12 +161,14 @@ static func _beams(rng: RandomNumberGenerator, band: int, length: float) -> Arra
 
 static func _slalom(rng: RandomNumberGenerator, band: int, length: float) -> Array:
 	var out: Array = []
-	var n := 3 + (1 if band >= 3 else 0)
+	# Walls stay >= 30 m apart: a full side-to-side swing must fit the
+	# top-speed reaction window (~0.45 s at 65 m/s). See docs/TUNING_LOG.md.
+	var n := 3
 	var spacing := (length - 30.0) / n
 	var side := -1 if rng.randf() < 0.5 else 1
 	for i in n:
 		var z := -15.0 - i * spacing
-		var reach := rng.randf_range(0.0, 1.5)
+		var reach := rng.randf_range(-0.5, 1.0)
 		if side < 0:
 			out.append(ObstacleSpec.box_span(-W, reach, -H, H, z, 3.0, i))
 		else:

@@ -12,6 +12,9 @@ All flight values live in `game/data/handling_default.tres` (HandlingConfig). Re
 | 2026-11-24 | Route backtracking prefers real obstacle clearance and penalises zig-zags; partial smoothing | Remaining failures were 1-cell zig-zags right beside hazards |
 | 2026-11-24 | Near-miss threshold **1.7 m** surface clearance, combo max 5, timeout 4 s, 40 pts | Guide p.3 contract; soak bot averages ~35 near misses per 2.2 km |
 | 2026-11-24 | Ring hole half-size ≥ 2.9 × 2.4 m, canyon edge growth 0.7/band, debris density 9+3·band | Keep band-3 fallback (recovery chunk) rate near 4 % |
+| 2026-11-25 | Slalom walls always ≥ 30 m apart (3 walls per 120 m), reach −0.5…1.0 m past centre | Autotest crashed at 6 km: at ≥ 62 m/s the 22.5 m band-3 slalom caused 100 % of bot crashes (~4 % of chains). After: 0/1200 at 55–65 m/s |
+| 2026-11-25 | Hull: no clearcoat, metallic 0.2; ship key light 1.4 → 3.2 | Screenshot review: white NOVA hull rendered dull grey under the Mobile renderer (clearcoat), fine under Compatibility |
+| 2026-11-25 | Audio: master hard limiter (−1 dB), boom normalised and −4 dB, engine cut on crash, seamless folded loops, ambient pad on menu/results | Measured: crash clipped at 0 dBFS, boom asset itself clipped (+3.3 dB), engine/wind loops clicked once per second, results screen −64 dB (silent) |
 
 Open questions for the playtest: drag gain (26 m per screen height) on small phones; whether the
 first-run safe opening (4 recovery chunks) is too long; camera height 2.3 m vs. readability.
