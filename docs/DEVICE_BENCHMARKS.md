@@ -36,7 +36,7 @@ ship ~60 → ~20 draws (merged static parts, instanced petals); orbs one instanc
 no shadow pass for scenery; 6 spawned chunks instead of 8; low-poly decoration asteroids;
 sky noise in the quarter-resolution pass; rock shader 9 → 6 fetches (2 on scenery), no
 vertex fetches on scenery; flame noise from a texture instead of per-pixel hashing; post
-effect without per-frame mipmaps; shader warm-up at start + export shader baker.
+effect without per-frame mipmaps; shader warm-up at start (the export shader baker cannot see runtime-created materials, so it is not used).
 
 ## Automated (non-device) evidence, 2026-11-24
 

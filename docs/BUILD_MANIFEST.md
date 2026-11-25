@@ -28,3 +28,4 @@ performance – that requires the device matrix.
 | Version | Date | Size | Signed with | Verified |
 |---|---|---|---|---|
 | 0.1.0 (code 1) | 2026-11-26 | 26.9 MB | session-generated test release key (CN=DashPanda Studios) - **not** the store key | apksigner v2+v3 OK; minSdk 24, targetSdk 36, arm64-v8a |
+| 0.1.1 (code 2) | 2026-11-26 | 26.9 MB | same test release key as 0.1.0 (installs as an update) | apksigner v2+v3 OK; performance pass |
