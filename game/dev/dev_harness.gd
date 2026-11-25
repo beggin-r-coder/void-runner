@@ -21,7 +21,10 @@ extends Node
 ##   --soak=N           N run/retry cycles with the physics autopilot, pool leak check
 ##   --soak-distance=M  distance that counts as a survived soak run (default 2500)
 
-const STAGES := ["boot", "launch", "steer", "roll", "running", "band1", "pause", "band2", "sector2", "band3", "sector3", "loop", "crash", "results", "hangar", "settings", "retry"]
+## Built in setup(): fixed head/tail plus one milestone per difficulty band
+## and per world (sector), in distance order, then a loop back to world 1.
+var STAGES: Array[String] = []
+var _milestones: Array = []  # [name, distance, note]
 
 var game: Node  # run_root
 var flags: Dictionary = {}
@@ -30,7 +33,7 @@ var _save_files: Array[String] = []
 var _passes: int = 0
 var _fails: int = 0
 var _t0: int = 0
-var _until: int = STAGES.size() - 1
+var _until: int = 999
 var _soak_log: Array = []
 var _soak_target: int = 0
 var _soak_distance: float = 2500.0
@@ -39,6 +42,7 @@ var _warp_count: int = 0
 
 func setup(p_game: Node) -> void:
 	game = p_game
+	_build_stages()
 	process_mode = Node.PROCESS_MODE_ALWAYS
 	for a in OS.get_cmdline_user_args():
 		if a.begins_with("--"):
@@ -103,6 +107,26 @@ func setup(p_game: Node) -> void:
 		_tour.call_deferred()
 	elif flags.has("shot") or flags.has("state"):
 		_single_state.call_deferred()
+
+
+func _build_stages() -> void:
+	var diff: DifficultyProfile = game.DIFFICULTY
+	_milestones.clear()
+	for b in range(2, diff.band_distances.size()):
+		_milestones.append(["band%d" % b, diff.band_distances[b] + 20.0, ""])
+	for w in range(1, diff.theme_count):
+		_milestones.append(["sector%d" % (w + 1), w * diff.theme_length + 180.0, game.THEMES[w].display_name])
+	_milestones.append(["loop", diff.theme_count * diff.theme_length + 180.0, game.THEMES[0].display_name])
+	_milestones.sort_custom(func(a: Array, b: Array) -> bool: return a[1] < b[1])
+	STAGES.assign(["boot", "launch", "steer", "roll", "running", "band1", "pause"])
+	for m in _milestones:
+		STAGES.append(m[0])
+	STAGES.append_array(["crash", "results", "hangar", "settings", "retry"])
+	_until = STAGES.size() - 1
+
+
+func _si(stage_name: String) -> int:
+	return STAGES.find(stage_name)
 
 
 # --- save isolation ----------------------------------------------------------------
@@ -267,14 +291,14 @@ func _autotest() -> void:
 	await _frames(10)
 
 	# 0 boot
-	status(0, g.session.state == RunSession.State.MENU and ui.menu.visible)
-	if await _stop_if_until(0): return
+	status(_si("boot"), g.session.state == RunSession.State.MENU and ui.menu.visible)
+	if await _stop_if_until(_si("boot")): return
 
 	# 1 launch: tap the screen like a player
 	await click(ui.buttons["menu:tap"])
 	var first_run: bool = g.session.state == RunSession.State.TUTORIAL
-	status(1, first_run or g.session.state == RunSession.State.COUNTDOWN, "tutorial=%s" % first_run)
-	if await _stop_if_until(1): return
+	status(_si("launch"), first_run or g.session.state == RunSession.State.COUNTDOWN, "tutorial=%s" % first_run)
+	if await _stop_if_until(_si("launch")): return
 
 	# 2 steer: one-thumb relative drag through the input router
 	# drag exactly 4 m worth (drag_gain metres per viewport height), in screen pixels
@@ -290,8 +314,8 @@ func _autotest() -> void:
 	var steered: float = g.ship.position.x
 	drag(c)
 	touch(false, c)
-	status(2, steered > 3.5, "4 m drag moved ship to x=%.2f" % steered)
-	if await _stop_if_until(2): return
+	status(_si("steer"), steered > 3.5, "4 m drag moved ship to x=%.2f" % steered)
+	if await _stop_if_until(_si("steer")): return
 
 	# 3 roll: on-screen roll button (real click), full revolution + sidestep, cooldown, Q key
 	g.ship.target = Vector2.ZERO
@@ -313,19 +337,19 @@ func _autotest() -> void:
 	var q_roll: bool = g.ship.rolling and g.ship.roll_dir == -1
 	await _wait(func() -> bool: return not g.ship.rolling, 2.0)
 	var full_turn := min_angle < -TAU * 0.9
-	status(3, started and full_turn and moved > 3.5 and blocked and q_roll, "button roll=%s turn=%.0fdeg sidestep=%.2fm cooldown_blocks=%s Q_roll=%s" % [started, rad_to_deg(-min_angle), moved, blocked, q_roll])
-	if await _stop_if_until(3): return
+	status(_si("roll"), started and full_turn and moved > 3.5 and blocked and q_roll, "button roll=%s turn=%.0fdeg sidestep=%.2fm cooldown_blocks=%s Q_roll=%s" % [started, rad_to_deg(-min_angle), moved, blocked, q_roll])
+	if await _stop_if_until(_si("roll")): return
 
 	# 4 running: autopilot takes over from here (route-following, NOT invulnerable)
 	g.ship.follower = g._follower
 	g.ship.invulnerable = false
 	var running := await _wait(func() -> bool: return g.session.state == RunSession.State.RUNNING, 20.0)
-	status(4, running)
-	if await _stop_if_until(4): return
+	status(_si("running"), running)
+	if await _stop_if_until(_si("running")): return
 
 	# 4 band 1
-	status(5, await _fly_to(g.DIFFICULTY.band_distances[1] + 20.0))
-	if await _stop_if_until(5): return
+	status(_si("band1"), await _fly_to(g.DIFFICULTY.band_distances[1] + 20.0))
+	if await _stop_if_until(_si("band1")): return
 
 	# 5 pause / resume via the HUD buttons
 	await click(ui.buttons["hud:II"])
@@ -337,35 +361,37 @@ func _autotest() -> void:
 	var esc_paused: bool = g.session.state == RunSession.State.PAUSED
 	await key(KEY_ESCAPE)
 	var esc_resumed: bool = g.session.state == RunSession.State.RUNNING and not g.get_tree().paused
-	status(6, paused and resumed and esc_paused and esc_resumed, "buttons paused=%s resumed=%s, esc paused=%s resumed=%s" % [paused, resumed, esc_paused, esc_resumed])
-	if await _stop_if_until(6): return
+	status(_si("pause"), paused and resumed and esc_paused and esc_resumed, "buttons paused=%s resumed=%s, esc paused=%s resumed=%s" % [paused, resumed, esc_paused, esc_resumed])
+	if await _stop_if_until(_si("pause")): return
 
 	# 6-10 progression: difficulty bands and sectors
-	var targets := [[7, g.DIFFICULTY.band_distances[2] + 20.0], [8, g.DIFFICULTY.theme_length + 180.0], [9, g.DIFFICULTY.band_distances[3] + 20.0], [10, g.DIFFICULTY.theme_length * 2.0 + 180.0], [11, g.DIFFICULTY.theme_length * 3.0 + 180.0]]
-	for tg in targets:
-		var ok: bool = await _fly_to(tg[1])
-		var expect_theme: int = g.DIFFICULTY.theme_for(tg[1])
-		ok = ok and g.current_theme == expect_theme
-		status(tg[0], ok)
+	for ms in _milestones:
+		var ok: bool = await _fly_to(float(ms[1]))
+		var expect_theme: int = g.DIFFICULTY.theme_for(float(ms[1]))
+		# worlds switch at the first chunk past the boundary, so only sector checkpoints assert the world
+		if str(ms[0]).begins_with("sector") or ms[0] == "loop":
+			ok = ok and g.current_theme == expect_theme
+		var world: String = g.THEMES[g.current_theme].display_name
+		status(_si(ms[0]), ok, ("world=\"%s\"" % world) if str(ms[0]).begins_with("sector") or ms[0] == "loop" else "")
 		if not ok:
 			print("[autotest] run ended early: ", g._crash_reason)
 			finish(1)
 			return
-		if await _stop_if_until(tg[0]): return
+		if await _stop_if_until(_si(ms[0])): return
 
 	# 11 crash: hands off the controls and fly straight until something is hit
 	var credits_before := int(Save.data["credits"])
 	g.ship.follower = null
 	g.ship.target = Vector2(g.ship.position.x, g.ship.position.y)
 	var crashed := await _wait(func() -> bool: return not g.session.is_live(), 60.0)
-	status(12, crashed, "reason=\"%s\"" % g._crash_reason)
-	if await _stop_if_until(12): return
+	status(_si("crash"), crashed, "reason=\"%s\"" % g._crash_reason)
+	if await _stop_if_until(_si("crash")): return
 
 	# 12 results + reward ledger
 	var at_results := await _wait(func() -> bool: return g.session.state == RunSession.State.RESULTS, 10.0)
 	var earned: int = g.score.credits_earned()
-	status(13, at_results and ui.results.visible and int(Save.data["credits"]) == credits_before + earned, "earned=%d" % earned)
-	if await _stop_if_until(13): return
+	status(_si("results"), at_results and ui.results.visible and int(Save.data["credits"]) == credits_before + earned, "earned=%d" % earned)
+	if await _stop_if_until(_si("results")): return
 
 	# 13 hangar: back to menu, open hangar, buy + equip the next livery if affordable
 	await click(ui.buttons["results:MENU"])
@@ -386,9 +412,9 @@ func _autotest() -> void:
 	var before := int(Save.data["credits"])
 	await click(ui.buttons["hangar:action"])
 	var bought: bool = Save.data["livery"] == "ember" and "ember" in Save.data["unlocked_liveries"] and int(Save.data["credits"]) == before - cost
-	status(14, ui.hangar_panel.visible and refused_ok and bought, note + ("bought + equipped EMBER for %d" % cost if bought else "purchase failed"))
+	status(_si("hangar"), ui.hangar_panel.visible and refused_ok and bought, note + ("bought + equipped EMBER for %d" % cost if bought else "purchase failed"))
 	await click(ui.buttons["hangar:BACK"])
-	if await _stop_if_until(14): return
+	if await _stop_if_until(_si("hangar")): return
 
 	# 14 settings: toggle reduced motion with a real click, verify, toggle back
 	await click(ui.buttons["menu:SETTINGS"])
@@ -397,16 +423,16 @@ func _autotest() -> void:
 	var on: bool = Save.setting("reduced_motion") == true and g.cam.reduced_motion
 	await click(toggle)
 	var off: bool = Save.setting("reduced_motion") == false and not g.cam.reduced_motion
-	status(15, ui.settings_panel.visible and on and off)
+	status(_si("settings"), ui.settings_panel.visible and on and off)
 	await click(ui.buttons["settings:DONE"])
-	if await _stop_if_until(15): return
+	if await _stop_if_until(_si("settings")): return
 
 	# 15 retry: second launch skips the tutorial and goes through the countdown
 	await click(ui.buttons["menu:tap"])
 	var countdown: bool = g.session.state == RunSession.State.COUNTDOWN
 	var live := await _wait(func() -> bool: return g.session.state == RunSession.State.RUNNING, 10.0)
-	status(16, countdown and live and ui.hud.visible)
-	await _stop_if_until(16)
+	status(_si("retry"), countdown and live and ui.hud.visible)
+	await _stop_if_until(_si("retry"))
 
 
 # --- steering trace (smoothness measurement) -------------------------------------
@@ -527,26 +553,20 @@ func _tour() -> void:
 	DirAccess.make_dir_recursive_absolute(dir)
 	g.autopilot_runs = true
 	g.invulnerable_runs = true
-	var steps := [
-		[2.5, "shot", "01_menu"],
-		[2.6, "start"],
-		[5.6, "roll", 1],
-		[7.0, "shot", "02_crimson_reach"],
-		[7.6, "roll", -1],
-		[8.5, "shot", "03_crimson_reach_b"],
-		[8.6, "warp", 2050.0],
-		[11.8, "roll", 1],
-		[13.0, "shot", "04_shattered_belt"],
-		[14.5, "shot", "05_shattered_belt_b"],
-		[14.6, "warp", 4050.0],
-		[17.6, "roll", -1],
-		[19.0, "shot", "06_silent_spires"],
-		[20.5, "shot", "07_silent_spires_b"],
-		[20.6, "crash"],
-		[20.75, "shot", "08_crash"],
-		[23.5, "shot", "09_results"],
-		[23.6, "quit"],
-	]
+	# menu, then ~4.5 s in each of the six worlds (warping between them), crash, results
+	var steps: Array = [[2.5, "shot", "01_menu"], [2.6, "start"]]
+	var t := 2.6
+	var diff: DifficultyProfile = g.DIFFICULTY
+	for w in diff.theme_count:
+		if w > 0:
+			steps.append([t, "warp", w * diff.theme_length + 50.0])
+		steps.append([t + 1.8, "roll", 1 if w % 2 == 0 else -1])
+		steps.append([t + 3.6, "shot", "%02d_%s" % [w + 2, g.THEMES[w].display_name.to_lower().replace(" ", "_")]])
+		t += 4.6
+	steps.append([t, "crash"])
+	steps.append([t + 0.15, "shot", "%02d_crash" % (diff.theme_count + 2)])
+	steps.append([t + 2.9, "shot", "%02d_results" % (diff.theme_count + 3)])
+	steps.append([t + 3.0, "quit"])
 	var clock := 0.0
 	while not steps.is_empty():
 		await game.get_tree().process_frame

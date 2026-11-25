@@ -24,6 +24,7 @@ func _initialize() -> void:
 	if _want("seed"): test_seed_determinism()
 	if _want("reach"): test_reachability()
 	if _want("bot"): test_bot_survival()
+	if _want("decor"): test_decor_envelope()
 	if _want("pool"): test_pool_cycling()
 	if _want("save"): test_save_store()
 	if _want("sweep"): await test_swept_collision()
@@ -252,6 +253,56 @@ func test_bot_survival() -> void:
 		var label := ("band %d" % band) if band < DIFFICULTY.band_distances.size() else "top speed 65 m/s"
 		check(rate >= 0.995, "%s: bot on the certified route survives %d/%d chains (>= 99.5%%)" % [label, n - crashes, n])
 	d.free()
+
+
+## Scenery must never enter the flight envelope (|x| < 8 + r, |y| < 4.5 + r),
+## or players see "hazards" that are not collidable. Every vertex of every
+## decoration mesh / multimesh instance is checked, for every world kind.
+func test_decor_envelope() -> void:
+	var themes: Array = load("res://game/scenes/run_root.gd").THEMES
+	print("[decoration stays outside the flight envelope: %d worlds]" % themes.size())
+	var mats := GameMaterials.new(themes)
+	var dresser := WorldDresser.new()
+	dresser.setup(themes, mats)
+	var hx := HANDLING.bounds_half_width + HANDLING.ship_radius
+	var hy := HANDLING.bounds_half_height + HANDLING.ship_radius
+	for ti in themes.size():
+		var kind: int = (themes[ti] as ThemeProfile).dresser_kind
+		var bad := 0
+		var worst := ""
+		for trial in 25:
+			var d: Node3D = dresser._make_dressing(kind)
+			var rng := RandomNumberGenerator.new()
+			rng.seed = 900 + trial * 31 + kind
+			d.call("randomize_layout", rng, 110.0, mats.themes[ti])
+			for child in d.get_children():
+				if not (child as Node3D).visible:
+					continue
+				var xforms: Array[Transform3D] = []
+				var mesh: Mesh = null
+				if child is MultiMeshInstance3D:
+					var mm := (child as MultiMeshInstance3D).multimesh
+					mesh = mm.mesh
+					var rec: Array = d.get("instance_xforms").get(mm, [])
+					for t in rec:
+						if t != null:
+							xforms.append((child as Node3D).transform * (t as Transform3D))
+				elif child is MeshInstance3D:
+					mesh = (child as MeshInstance3D).mesh
+					xforms.append((child as Node3D).transform)
+				if mesh == null:
+					continue
+				var verts: PackedVector3Array = mesh.surface_get_arrays(0)[Mesh.ARRAY_VERTEX]
+				for xf in xforms:
+					for v in verts:
+						var w: Vector3 = xf * v
+						if absf(w.x) < hx and absf(w.y) < hy:
+							bad += 1
+							worst = "%s at %s" % [child.get_class(), w]
+							break
+			d.free()
+		check(bad == 0, "%s (%d layouts): no decoration inside the envelope%s" % [(themes[ti] as ThemeProfile).display_name, 25, "" if bad == 0 else "  e.g. " + worst])
+	dresser.free()
 
 
 func test_pool_cycling() -> void:

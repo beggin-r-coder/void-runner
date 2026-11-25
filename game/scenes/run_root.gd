@@ -7,15 +7,19 @@ extends Node3D
 
 const HANDLING: HandlingConfig = preload("res://game/data/handling_default.tres")
 const DIFFICULTY: DifficultyProfile = preload("res://game/data/difficulty_default.tres")
+## Sector order (cycles): canyon -> asteroids -> ice -> ruins -> volcano -> reef
 const THEMES: Array[ThemeProfile] = [
 	preload("res://game/data/themes/crimson_reach.tres"),
 	preload("res://game/data/themes/shattered_belt.tres"),
+	preload("res://game/data/themes/frozen_expanse.tres"),
 	preload("res://game/data/themes/silent_spires.tres"),
+	preload("res://game/data/themes/molten_core.tres"),
+	preload("res://game/data/themes/lumina_reef.tres"),
 ]
 const SKY_SHADER := preload("res://game/art/shaders/sky.gdshader")
 const POST_SHADER := preload("res://game/art/shaders/post.gdshader")
 const ORIGIN_SHIFT_AT := 2000.0
-const SKY_PARAMS := ["sky_top", "sky_horizon", "sky_bottom", "horizon_glow", "star_strength", "nebula_strength", "nebula_a", "nebula_b", "planet_dir", "planet_radius", "planet_color", "planet_atmo", "planet_strength", "ring_strength", "ring_color", "mega_strength", "mega_color", "sun_color"]
+const SKY_PARAMS := ["sky_top", "sky_horizon", "sky_bottom", "horizon_glow", "star_strength", "nebula_strength", "nebula_a", "nebula_b", "planet_dir", "planet_radius", "planet_color", "planet_atmo", "planet_strength", "ring_strength", "ring_color", "mega_strength", "mega_color", "sun_color", "aurora_strength", "aurora_a", "aurora_b"]
 
 signal run_started(run_id: int)
 signal hazard_passed(run_id: int, uid: int, points: int)
@@ -258,6 +262,10 @@ func _begin_theme(index: int) -> void:
 	_theme_to = THEMES[index]
 	_theme_t = 0.0
 	ui.banner("SECTOR %d  -  %s" % [index + 1, THEMES[index].display_name])
+	# warp pulse into the new world
+	fx.warp_pulse()
+	ui.flash(THEMES[index].accent, 0.22)
+	Sfx.play("whoosh", 0.7, -2.0)
 
 
 func _ease_theme(t: float) -> float:
@@ -280,6 +288,7 @@ func _apply_theme(p: ThemeProfile) -> void:
 	env.glow_intensity = p.glow_intensity
 	env.tonemap_exposure = p.exposure
 	fx.set_theme_color(p.speedline_color)
+	fx.set_weather(p.weather)
 
 
 func _update_theme(delta: float) -> void:
@@ -435,7 +444,8 @@ func _physics_process(delta: float) -> void:
 	fx.update_fx(speed_t, flying, delta, ship.lateral_vel.x / cfg.max_lateral_speed, absf(roll_z), ship.lateral_vel, roll_z)
 	ui.set_roll_ready(ship.roll_ready())
 	if high_quality:
-		post_mat.set_shader_parameter("intensity", speed_t * (0.35 if reduced_motion else 1.0) if flying else 0.0)
+		var warp_post: float = fx.warp_level * fx.warp_level * (0.4 if reduced_motion else 1.2)
+		post_mat.set_shader_parameter("intensity", (speed_t * (0.35 if reduced_motion else 1.0) + warp_post) if flying else 0.0)
 		_flash = move_toward(_flash, 0.0, delta * 3.0)
 		post_mat.set_shader_parameter("flash", _flash)
 		post_mat.set_shader_parameter("flash_color", _flash_color)

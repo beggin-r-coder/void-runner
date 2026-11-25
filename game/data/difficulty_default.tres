@@ -7,5 +7,5 @@ script = ExtResource("1_dp")
 band_distances = PackedFloat32Array(0, 600, 1600, 3000)
 density_by_band = PackedFloat32Array(0.55, 0.75, 0.95, 1.15)
 pressure_seconds = 40.0
-theme_length = 2000.0
-theme_count = 3
+theme_length = 1500.0
+theme_count = 6

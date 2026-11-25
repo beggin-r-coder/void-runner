@@ -21,6 +21,9 @@ uniform vec3 ring_color : source_color = vec3(0.9, 0.8, 0.7);
 uniform float mega_strength = 0.0;
 uniform vec3 mega_color : source_color = vec3(0.2, 0.9, 1.0);
 uniform vec3 sun_color : source_color = vec3(1.0, 0.75, 0.5);
+uniform float aurora_strength = 0.0;
+uniform vec3 aurora_a : source_color = vec3(0.2, 1.0, 0.6);
+uniform vec3 aurora_b : source_color = vec3(0.6, 0.3, 1.0);
 
 float hash13(vec3 p) {
 	p = fract(p * 0.1031);
@@ -90,6 +93,22 @@ void sky() {
 		vec3 neb = nebula_a * smoothstep(0.42, 0.85, n1) + nebula_b * smoothstep(0.5, 0.9, n2) * 0.8;
 		neb *= 0.35 + band;
 		col += neb * nebula_strength * (0.6 + 0.4 * n2);
+	}
+
+	// aurora curtains: folded ribbons with vertical rays, green at the base
+	if (aurora_strength > 0.001 && h > -0.02) {
+		float lon = atan(d.x, -d.z);
+		for (int k = 0; k < 2; k++) {
+			float fk = float(k);
+			float fold = fbm(vec3(lon * 1.6 + fk * 4.0, fk * 2.3, 1.0)) * 0.32;
+			float base = 0.16 + fk * 0.12 + fold + 0.06 * sin(lon * 3.0 + fk);
+			float dy = h - base;
+			float curtain = smoothstep(-0.015, 0.0, dy) * exp(-max(dy, 0.0) * (9.0 - fk * 3.0));
+			float rays = 0.55 + 0.45 * noise3(vec3(lon * 55.0 + fk * 10.0, 0.0, fk));
+			float fade = smoothstep(-1.2, -0.2, sin(lon * 1.3 + fk * 2.0 + fold * 6.0));
+			vec3 ac = mix(aurora_a, aurora_b, clamp(dy * 4.0, 0.0, 1.0));
+			col += ac * curtain * rays * fade * aurora_strength * (0.9 - fk * 0.35);
+		}
 	}
 
 	// sun

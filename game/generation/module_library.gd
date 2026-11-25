@@ -12,6 +12,9 @@ const HAZARD_NAMES := [
 	["a canyon wall", "a boulder", "a rock spire", "a stone arch"],
 	["a derelict hull", "an asteroid", "an ice shard", "a drifting girder"],
 	["a monolith", "a sentinel orb", "an ancient column", "a fallen beam"],
+	["an ice wall", "a frozen boulder", "an ice pillar", "an ice bridge"],
+	["a basalt wall", "a lava bomb", "a magma column", "a basalt arch"],
+	["a coral wall", "a spore pod", "a coral stalk", "a vine bridge"],
 ]
 
 
@@ -32,7 +35,7 @@ static func definitions() -> Array[ChunkDefinition]:
 
 
 static func hazard_name(theme: int, kind: int) -> String:
-	return HAZARD_NAMES[clampi(theme, 0, 2)][kind]
+	return HAZARD_NAMES[clampi(theme, 0, HAZARD_NAMES.size() - 1)][kind]
 
 
 static func generate(def: ChunkDefinition, rng: RandomNumberGenerator, band: int, density: float) -> Array:

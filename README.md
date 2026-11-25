@@ -1,6 +1,6 @@
 # Void Runner
 
-**High-speed immersive spaceship flying through alien planets, asteroid fields and abandoned civilizations.**
+**High-speed immersive spaceship flying through alien planets, asteroid fields and abandoned civilizations - six worlds and counting.**
 *Hook: experience incredible speed and near misses.*
 
 DashPanda Studios · Android · Godot 4.7.2 (pinned) · typed GDScript · landscape
@@ -19,7 +19,7 @@ DashPanda Studios · Android · Godot 4.7.2 (pinned) · typed GDScript · landsc
 
 ▶ Same scripted drags, old vs new steering side by side: [`media/steering_before_after.mp4`](media/steering_before_after.mp4)
 
-▶ 24-second gameplay capture: [`media/void_runner_tour.mp4`](media/void_runner_tour.mp4)
+▶ 33-second gameplay capture (all six worlds): [`media/void_runner_tour.mp4`](media/void_runner_tour.mp4)
 
 ## What's in this build (prototype, phases 0–1)
 
@@ -31,7 +31,8 @@ DashPanda Studios · Android · Godot 4.7.2 (pinned) · typed GDScript · landsc
 | Controller-aware fairness validator: voxelized cross-section, inflated hazards, reachable-cell propagation, retry → safe recovery chunk | ✅ 16,000 chunks certified |
 | One continuous certified route per run (drives energy lines + attract-mode autopilot) | ✅ |
 | Separate RNG streams (route / hazard / pickup / cosmetic), seed + generator version reproduction | ✅ |
-| 3 visual sectors that cross-fade: **Crimson Reach** (alien canyon planet), **Shattered Belt** (asteroid field), **Silent Spires** (abandoned megastructure) | ✅ |
+| 6 worlds, 1.5 km each, cycling with a warp-pulse transition: **Crimson Reach** (alien canyon planet), **Shattered Belt** (asteroid field), **Frozen Expanse** (ice moon, aurora, snow), **Silent Spires** (abandoned megastructure), **Molten Core** (volcanic, lava rivers, embers), **Lumina Reef** (bioluminescent coral forest, giant mushrooms, spores) | ✅ autotest visits all six |
+| Decoration never enters the flight envelope (every vertex, every world, 25 random layouts each) | ✅ `run_tests.gd` → decor |
 | Scoring contract `floor(distance) + Σ 40 × combo`, combo ≤ 5, 4 s expiry, one payout per obstacle id | ✅ tested |
 | Near-miss feedback: popup, combo chevrons, sparks, FOV kick, hit-stop, whoosh, haptics | ✅ |
 | Interceptor ship: faceted lofted fuselage with glowing chines, gem-cut canopy, cranked arrow wings with lit leading edges and livery chevrons, anhedral tip fins, swept twin tails, lofted engine pods with intakes; two-tone hull shader with panel lines and spine stripe | ✅ |
@@ -132,10 +133,10 @@ ffmpeg -i /tmp/tour.avi -af volumedetect -vn -f null -
 | `--fresh` | Throw-away save, deleted on exit (implied by `--autotest`, `--shot(s)`, `--state`, `--soak`) |
 | `--save=PATH` | Use this save file (save → reload checks) |
 | `--autotest` | Automated playthrough described above |
-| `--until=N\|NAME` | Stop the autotest after a stage: `boot launch steer roll running band1 pause band2 sector2 band3 sector3 loop crash results hangar settings retry` |
+| `--until=N\|NAME` | Stop the autotest after a stage: `boot launch steer roll running band1 pause band2 sector2 band3 sector3 sector4 sector5 sector6 loop crash results hangar settings retry` (milestones are generated from the difficulty profile) |
 | `--no-warp` | Autotest flies every metre (default fast-forwards between stages, flying the last 450 m for real) |
 | `--shot=PATH` | Save a viewport screenshot, then quit (after `--state` or `--until`) |
-| `--shots=DIR` | Timeline tour: menu, three sectors, crash, results (alias `--capture=DIR`) |
+| `--shots=DIR` | Timeline tour: menu, every world, crash, results (alias `--capture=DIR`) |
 | `--state=NAME` | `menu tutorial countdown hud pause settings hangar results roll bank` (`--roll-at=0..1`, `--roll-dir=-1\|1` for roll) |
 | `--distance=M` | Start runs at this route distance (sector / difficulty) |
 | `--seed=N` | Deterministic run seeds |

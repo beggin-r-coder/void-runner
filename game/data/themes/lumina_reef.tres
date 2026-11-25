@@ -1,0 +1,46 @@
+[gd_resource type="Resource" script_class="ThemeProfile" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://game/data/theme_profile.gd" id="1_tp"]
+
+[resource]
+script = ExtResource("1_tp")
+display_name = "LUMINA REEF"
+dresser_kind = 5
+weather = 3
+sky_top = Color(0.015, 0.025, 0.07, 1)
+sky_horizon = Color(0.08, 0.33, 0.38, 1)
+sky_bottom = Color(0.02, 0.05, 0.06, 1)
+horizon_glow = 1.0
+star_strength = 1.1
+nebula_strength = 0.65
+nebula_a = Color(0.1, 0.8, 0.7, 1)
+nebula_b = Color(0.7, 0.2, 0.9, 1)
+planet_dir = Vector3(0.38, 0.4, -1)
+planet_radius = 0.17
+planet_color = Color(0.75, 0.5, 0.95, 1)
+planet_atmo = Color(0.4, 1, 0.9, 1)
+planet_strength = 1.0
+ring_strength = 0.7
+ring_color = Color(0.6, 1, 0.9, 1)
+mega_strength = 0.0
+aurora_strength = 0.35
+aurora_a = Color(0.2, 1, 0.8, 1)
+aurora_b = Color(0.9, 0.3, 1, 1)
+sun_color = Color(0.6, 1, 0.9, 1)
+sun_energy = 1.2
+sun_dir = Vector3(-0.4, -0.5, 0.3)
+ambient_color = Color(0.15, 0.3, 0.36, 1)
+ambient_energy = 0.75
+fog_color = Color(0.05, 0.2, 0.24, 1)
+fog_density = 0.0055
+fog_height = -4.0
+fog_height_density = 0.25
+fog_sun_scatter = 0.2
+glow_intensity = 1.15
+exposure = 1.0
+rock_a = Color(0.16, 0.08, 0.24, 1)
+rock_b = Color(0.32, 0.16, 0.42, 1)
+rock_c = Color(0.04, 0.1, 0.12, 1)
+accent = Color(0.2, 1, 0.82, 1)
+hazard_rim = Color(0.6, 1, 0.92, 1)
+speedline_color = Color(0.6, 1, 0.92, 1)

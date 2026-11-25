@@ -1,0 +1,46 @@
+[gd_resource type="Resource" script_class="ThemeProfile" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://game/data/theme_profile.gd" id="1_tp"]
+
+[resource]
+script = ExtResource("1_tp")
+display_name = "FROZEN EXPANSE"
+dresser_kind = 3
+weather = 1
+sky_top = Color(0.02, 0.04, 0.12, 1)
+sky_horizon = Color(0.32, 0.5, 0.7, 1)
+sky_bottom = Color(0.08, 0.12, 0.2, 1)
+horizon_glow = 0.6
+star_strength = 1.0
+nebula_strength = 0.15
+nebula_a = Color(0.2, 0.5, 0.9, 1)
+nebula_b = Color(0.4, 0.3, 0.9, 1)
+planet_dir = Vector3(0.45, 0.28, -1)
+planet_radius = 0.24
+planet_color = Color(0.62, 0.82, 1, 1)
+planet_atmo = Color(0.7, 0.9, 1, 1)
+planet_strength = 1.0
+ring_strength = 0.55
+ring_color = Color(0.85, 0.92, 1, 1)
+mega_strength = 0.0
+aurora_strength = 1.4
+aurora_a = Color(0.15, 1, 0.55, 1)
+aurora_b = Color(0.55, 0.3, 1, 1)
+sun_color = Color(0.85, 0.95, 1, 1)
+sun_energy = 1.9
+sun_dir = Vector3(-0.5, -0.4, 0.3)
+ambient_color = Color(0.36, 0.46, 0.62, 1)
+ambient_energy = 0.7
+fog_color = Color(0.32, 0.46, 0.62, 1)
+fog_density = 0.0032
+fog_height = -4.0
+fog_height_density = 0.14
+fog_sun_scatter = 0.3
+glow_intensity = 0.85
+exposure = 0.82
+rock_a = Color(0.32, 0.46, 0.62, 1)
+rock_b = Color(0.66, 0.8, 0.92, 1)
+rock_c = Color(0.14, 0.22, 0.36, 1)
+accent = Color(0.35, 0.95, 1, 1)
+hazard_rim = Color(0.7, 0.96, 1, 1)
+speedline_color = Color(0.85, 0.95, 1, 1)

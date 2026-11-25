@@ -27,6 +27,12 @@ var rcs: Dictionary = {}
 var _rcs_level: Vector2 = Vector2.ZERO  # x = left jet, y = right jet
 var _prev_lat_vel: Vector2 = Vector2.ZERO
 var _anim_t: float = 0.0
+# world weather + sector warp
+var weather: GPUParticles3D
+var _weather_kind: int = -1
+var _weather_mat: ShaderMaterial
+var warp_level: float = 0.0
+var _mats: GameMaterials
 
 
 ## Momentary thrust surge (roll, near miss, launch): longer, brighter plume.
@@ -49,6 +55,8 @@ func setup(p_cam: Camera3D, mats: GameMaterials) -> void:
 	dmesh.rings = 2
 	dust = _make_streaks(dmesh, dust_mat, 90, 9.0, 1.5)
 	cam.add_child(dust)
+	_mats = mats
+	_build_weather()
 
 
 func _make_streaks(mesh: Mesh, mat: Material, amount: int, radius: float, inner: float) -> GPUParticles3D:
@@ -171,6 +179,87 @@ func _animate_ship(delta: float, speed_t: float, flying: bool, lat_vel: Vector2)
 		(st as Node3D).visible = ph < 0.05 or (ph > 0.14 and ph < 0.19)
 
 
+func _build_weather() -> void:
+	weather = GPUParticles3D.new()
+	weather.amount = 260
+	weather.lifetime = 1.4
+	weather.preprocess = 1.4
+	weather.local_coords = true
+	weather.position = Vector3(0, 0, -45)
+	weather.visibility_aabb = AABB(Vector3(-40, -30, -60), Vector3(80, 60, 140))
+	weather.emitting = false
+	var pm := ParticleProcessMaterial.new()
+	pm.emission_shape = ParticleProcessMaterial.EMISSION_SHAPE_BOX
+	pm.emission_box_extents = Vector3(26, 15, 40)
+	pm.direction = Vector3(0, 0, 1)
+	pm.spread = 4.0
+	pm.turbulence_enabled = true
+	pm.turbulence_noise_scale = 6.0
+	pm.turbulence_noise_speed = Vector3(0.3, 0.2, 0.0)
+	weather.process_material = pm
+	var m := SphereMesh.new()
+	m.radius = 0.06
+	m.height = 0.12
+	m.radial_segments = 6
+	m.rings = 3
+	weather.draw_pass_1 = m
+	_weather_mat = _mats.energy(Color.WHITE, 1.0)
+	weather.material_override = _weather_mat
+	weather.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	cam.add_child(weather)
+
+
+## 0 none, 1 snow, 2 embers, 3 spores
+func set_weather(kind: int) -> void:
+	if kind == _weather_kind:
+		return
+	_weather_kind = kind
+	var pm := weather.process_material as ParticleProcessMaterial
+	weather.emitting = kind > 0
+	match kind:
+		1:  # snow: soft white flakes drifting down, streaking past
+			_weather_mat.set_shader_parameter("color", Color(0.9, 0.96, 1.0))
+			_weather_mat.set_shader_parameter("energy", 0.9)
+			pm.initial_velocity_min = 45.0
+			pm.initial_velocity_max = 75.0
+			pm.gravity = Vector3(0, -4.0, 0)
+			pm.turbulence_influence_min = 0.05
+			pm.turbulence_influence_max = 0.12
+			pm.scale_min = 0.6
+			pm.scale_max = 1.3
+			weather.amount_ratio = 1.0
+		2:  # embers: hot sparks rising through the ash
+			_weather_mat.set_shader_parameter("color", Color(1.0, 0.5, 0.12))
+			_weather_mat.set_shader_parameter("energy", 4.5)
+			pm.initial_velocity_min = 55.0
+			pm.initial_velocity_max = 90.0
+			pm.gravity = Vector3(0, 6.0, 0)
+			pm.turbulence_influence_min = 0.1
+			pm.turbulence_influence_max = 0.25
+			pm.scale_min = 0.35
+			pm.scale_max = 0.9
+			weather.amount_ratio = 0.8
+		3:  # spores: glowing motes that hang in the air (slower than the ship)
+			_weather_mat.set_shader_parameter("color", Color(0.35, 1.0, 0.85))
+			_weather_mat.set_shader_parameter("energy", 3.0)
+			pm.initial_velocity_min = 22.0
+			pm.initial_velocity_max = 40.0
+			pm.gravity = Vector3(0, 0.8, 0)
+			pm.turbulence_influence_min = 0.2
+			pm.turbulence_influence_max = 0.45
+			pm.scale_min = 0.9
+			pm.scale_max = 2.0
+			weather.amount_ratio = 0.55
+	if not quality_high:
+		weather.amount_ratio *= 0.5
+
+
+## Brief hyperspace surge when entering a new sector.
+func warp_pulse() -> void:
+	warp_level = 1.0
+	surge(0.8)
+
+
 func set_theme_color(c: Color) -> void:
 	_streak_mat.set_shader_parameter("color", c)
 
@@ -203,13 +292,16 @@ func update_fx(speed_t: float, flying: bool, delta: float, lateral: float = 0.0,
 	var ratio := (0.15 + 0.85 * speed_t) if flying else 0.0
 	if not quality_high:
 		ratio *= 0.5
+	warp_level = move_toward(warp_level, 0.0, delta * 0.7)
+	var warp_k := warp_level * warp_level
+	ratio = minf(ratio + warp_k * 0.8, 1.0)
 	streaks.amount_ratio = ratio
 	streaks.emitting = ratio > 0.01
 	dust.amount_ratio = 0.5 + 0.5 * speed_t if flying else 0.3
 	var pm := streaks.process_material as ParticleProcessMaterial
-	pm.initial_velocity_min = 90.0 + 80.0 * speed_t
-	pm.initial_velocity_max = 130.0 + 100.0 * speed_t
-	_streak_mat.set_shader_parameter("energy", 1.2 + 2.0 * speed_t)
+	pm.initial_velocity_min = (90.0 + 80.0 * speed_t) * (1.0 + warp_k)
+	pm.initial_velocity_max = (130.0 + 100.0 * speed_t) * (1.0 + warp_k)
+	_streak_mat.set_shader_parameter("energy", (1.2 + 2.0 * speed_t) * (1.0 + 2.5 * warp_k))
 	_surge = move_toward(_surge, 0.0, delta * 1.6)
 	# tail lags behind lateral motion: spring toward the opposite of velocity,
 	# expressed in the (banked / rolling) ship frame

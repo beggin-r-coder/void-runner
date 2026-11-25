@@ -25,7 +25,7 @@ func setup(p_profiles: Array, p_materials: GameMaterials) -> void:
 		var kind := k
 		pool.register(StringName("obs_%d" % k), func() -> Node: return ObstacleNode.new(kind), PREWARM[k])
 	pool.register(&"orb", _make_orb, 48)
-	for kind in 3:
+	for kind in 6:
 		var dk := kind
 		pool.register(StringName("dress_%d" % kind), func() -> Node: return _make_dressing(dk), 9)
 
@@ -68,7 +68,7 @@ func _build_meshes() -> void:
 func hazard_mesh(theme_kind: int, spec: ObstacleSpec) -> Mesh:
 	match spec.kind:
 		ObstacleSpec.Kind.SPHERE:
-			if theme_kind == 2:
+			if theme_kind == 2 or theme_kind == 5:
 				return _meshes["orb_sphere"]
 			return (_meshes["asteroids"] as Array)[spec.variant % 8]
 		ObstacleSpec.Kind.BOX:

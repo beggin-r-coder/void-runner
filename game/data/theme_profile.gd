@@ -4,7 +4,11 @@ extends Resource
 ## Numeric fields blend smoothly between sectors.
 
 @export var display_name: String = "SECTOR"
-@export var dresser_kind: int = 0  # 0 canyon planet, 1 asteroid field, 2 abandoned megastructure
+## 0 canyon planet, 1 asteroid field, 2 abandoned megastructure,
+## 3 ice moon, 4 volcanic world, 5 bioluminescent reef
+@export var dresser_kind: int = 0
+## Camera weather particles: 0 none, 1 snow, 2 embers, 3 spores
+@export var weather: int = 0
 
 @export_group("Sky")
 @export var sky_top: Color = Color(0.1, 0.05, 0.12)
@@ -24,6 +28,9 @@ extends Resource
 @export var ring_color: Color = Color(0.9, 0.8, 0.7)
 @export var mega_strength: float = 0.0
 @export var mega_color: Color = Color(0.2, 0.9, 1.0)
+@export var aurora_strength: float = 0.0
+@export var aurora_a: Color = Color(0.2, 1.0, 0.6)
+@export var aurora_b: Color = Color(0.6, 0.3, 1.0)
 
 @export_group("Light")
 @export var sun_color: Color = Color(1.0, 0.75, 0.5)
@@ -65,4 +72,5 @@ static func blend(a: ThemeProfile, b: ThemeProfile, t: float) -> ThemeProfile:
 	if t >= 0.5:
 		out.display_name = b.display_name
 		out.dresser_kind = b.dresser_kind
+		out.weather = b.weather
 	return out

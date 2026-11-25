@@ -6,8 +6,8 @@ extends Resource
 @export var band_distances: PackedFloat32Array = PackedFloat32Array([0.0, 600.0, 1600.0, 3000.0])
 @export var density_by_band: PackedFloat32Array = PackedFloat32Array([0.55, 0.75, 0.95, 1.15])
 @export var pressure_seconds: float = 40.0
-@export var theme_length: float = 2000.0
-@export var theme_count: int = 3
+@export var theme_length: float = 1500.0
+@export var theme_count: int = 6
 
 
 func band_for(distance: float) -> int:

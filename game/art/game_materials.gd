@@ -124,6 +124,47 @@ func _build_theme(index: int, p: ThemeProfile) -> Dictionary:
 			d["hazard"] = [hull, ast, ice, hull]
 			d["deco_rock"] = rock(p, false, 0.15, 0.05)
 			d["crystal"] = crystal(p.accent, 3.5)
+		3:  # ice moon
+			var ice := rock(p, true, 0.45, 0.06)
+			ice.set_shader_parameter("roughness_v", 0.22)
+			ice.set_shader_parameter("metallic_v", 0.15)
+			ice.set_shader_parameter("strata_strength", 0.35)
+			var boulder := rock(p, true, 0.3, 0.1)
+			boulder.set_shader_parameter("roughness_v", 0.35)
+			d["hazard"] = [ice, boulder, ice, ice]
+			d["deco_rock"] = rock(p, false, 0.25, 0.04)
+			(d["deco_rock"] as ShaderMaterial).set_shader_parameter("roughness_v", 0.3)
+			var floor_ice := rock(p, false, 0.15, 0.035)
+			floor_ice.set_shader_parameter("roughness_v", 0.08)
+			floor_ice.set_shader_parameter("metallic_v", 0.25)
+			floor_ice.set_shader_parameter("strata_strength", 0.15)
+			d["deco_floor"] = floor_ice
+			d["crystal"] = crystal(Color(0.45, 0.9, 1.0), 2.2)
+		4:  # volcanic world: basalt with glowing cracks, lava floor
+			var basalt := rock(p, true, 1.4, 0.07)
+			basalt.set_shader_parameter("vein_width", 0.028)
+			d["hazard"] = [basalt, rock(p, true, 2.2, 0.12), basalt, basalt]
+			d["deco_rock"] = rock(p, false, 0.9, 0.045)
+			var lava := rock(p, false, 3.0, 0.03)
+			lava.set_shader_parameter("vein_width", 0.09)
+			lava.set_shader_parameter("roughness_v", 0.6)
+			d["deco_floor"] = lava
+			d["crystal"] = crystal(Color(1.0, 0.35, 0.05), 4.5)
+		5:  # bioluminescent reef
+			var coral := rock(p, true, 1.1, 0.09)
+			coral.set_shader_parameter("vein_color", Color(1.0, 0.3, 0.8))
+			coral.set_shader_parameter("vein_width", 0.03)
+			var pod := crystal(Color(0.25, 1.0, 0.8), 2.0)
+			pod.albedo_color = Color(0.1, 0.35, 0.3)
+			pod.rim_tint = 0.5
+			d["hazard"] = [coral, pod, coral, coral]
+			d["deco_rock"] = rock(p, false, 0.9, 0.06)
+			var moss := rock(p, false, 0.6, 0.05)
+			moss.set_shader_parameter("color_a", Color(0.04, 0.12, 0.12))
+			moss.set_shader_parameter("color_b", Color(0.08, 0.22, 0.2))
+			d["deco_floor"] = moss
+			d["crystal"] = crystal(Color(0.3, 1.0, 0.85), 4.0)
+			d["crystal_b"] = crystal(Color(1.0, 0.35, 0.85), 3.5)
 		_:  # abandoned megastructure
 			var mono := ruin(p, true, p.accent, 0.0, 0.35)
 			d["hazard"] = [mono, ruin(p, true, Color(1.0, 0.45, 0.25), 0.0, 0.5), mono, mono]
