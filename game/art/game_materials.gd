@@ -4,6 +4,7 @@ extends RefCounted
 ## brighter rim than scenery so collidable things always read as hazards.
 
 const ROCK := preload("res://game/art/shaders/rock.gdshader")
+const ROCK_SCENERY := preload("res://game/art/shaders/rock_scenery.gdshader")
 const RUIN := preload("res://game/art/shaders/ruin.gdshader")
 const ENERGY := preload("res://game/art/shaders/energy.gdshader")
 const TRAIL := preload("res://game/art/shaders/trail.gdshader")
@@ -12,6 +13,9 @@ const SHOCK := preload("res://game/art/shaders/shockwave.gdshader")
 
 var noise: Texture2D
 var noise_normal: Texture2D
+var noise_packed: Texture2D
+## Scenery variant of the rock shader without vertex displacement.
+var rock_flat: Shader
 ## themes[i] = { "hazard": [BOX, SPHERE, CYL_V, CYL_H], "deco_rock", "deco_ruin", "crystal", ... }
 var themes: Array[Dictionary] = []
 
@@ -20,15 +24,30 @@ func _init(profiles: Array) -> void:
 	var tex := MeshFactory.noise_textures(7)
 	noise = tex[0]
 	noise_normal = tex[1]
+	noise_packed = tex[2]
+	rock_flat = ROCK_SCENERY  # file-based so the export shader baker can precompile it
 	for i in profiles.size():
 		themes.append(_build_theme(i, profiles[i]))
 
 
+## Every material the game can draw (all worlds), for shader warm-up.
+func all_materials() -> Array[Material]:
+	var out: Array[Material] = []
+	for d in themes:
+		for v in (d as Dictionary).values():
+			if v is Material and not out.has(v):
+				out.append(v)
+			elif v is Array:
+				for m in v:
+					if m is Material and not out.has(m):
+						out.append(m)
+	return out
+
+
 func rock(p: ThemeProfile, hazard: bool, veins: float, scale: float = 0.07) -> ShaderMaterial:
 	var m := ShaderMaterial.new()
-	m.shader = ROCK
-	m.set_shader_parameter("noise_tex", noise)
-	m.set_shader_parameter("normal_tex", noise_normal)
+	m.shader = ROCK if hazard else rock_flat
+	m.set_shader_parameter("packed_tex", noise_packed)
 	m.set_shader_parameter("color_a", p.rock_a)
 	m.set_shader_parameter("color_b", p.rock_b)
 	m.set_shader_parameter("color_c", p.rock_c)
@@ -92,6 +111,7 @@ func flame(outer: Color, seed_value: float = 0.0, sheath: bool = false) -> Shade
 	m.set_shader_parameter("core_color", Color(1.0, 1.0, 1.0).lerp(outer, 0.15))
 	m.set_shader_parameter("seed", seed_value)
 	m.set_shader_parameter("sheath", 1.0 if sheath else 0.0)
+	m.set_shader_parameter("noise_tex", noise)
 	m.set_shader_parameter("energy", 1.3 if sheath else 3.0)
 	return m
 

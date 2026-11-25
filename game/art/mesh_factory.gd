@@ -392,10 +392,46 @@ static func ngon(count: int, rot: float = 0.0) -> PackedVector2Array:
 	return out
 
 
+## Merges [mesh, Transform3D] pairs into one ArrayMesh (vertex, normal, UV).
+## Mirrored transforms (negative determinant) get their winding flipped so
+## faces stay front-facing. Used to collapse many static parts into one draw.
+static func merge(items: Array) -> ArrayMesh:
+	var verts := PackedVector3Array()
+	var normals := PackedVector3Array()
+	var uvs := PackedVector2Array()
+	var indices := PackedInt32Array()
+	for it in items:
+		var mesh: Mesh = it[0]
+		var xf: Transform3D = it[1]
+		var nb := xf.basis.inverse().transposed()
+		var flip := xf.basis.determinant() < 0.0
+		for si in mesh.get_surface_count():
+			var arr := mesh.surface_get_arrays(si)
+			var v: PackedVector3Array = arr[Mesh.ARRAY_VERTEX]
+			var n: PackedVector3Array = arr[Mesh.ARRAY_NORMAL] if arr[Mesh.ARRAY_NORMAL] != null else PackedVector3Array()
+			var uv: PackedVector2Array = arr[Mesh.ARRAY_TEX_UV] if arr[Mesh.ARRAY_TEX_UV] != null else PackedVector2Array()
+			var idx: PackedInt32Array = arr[Mesh.ARRAY_INDEX] if arr[Mesh.ARRAY_INDEX] != null else PackedInt32Array()
+			var base := verts.size()
+			for i in v.size():
+				verts.append(xf * v[i])
+				normals.append((nb * n[i]).normalized() if i < n.size() else Vector3.UP)
+				uvs.append(uv[i] if i < uv.size() else Vector2.ZERO)
+			if idx.is_empty():
+				idx.resize(v.size())
+				for i in v.size():
+					idx[i] = i
+			for t in range(0, idx.size(), 3):
+				if flip:
+					indices.append_array([base + idx[t], base + idx[t + 2], base + idx[t + 1]])
+				else:
+					indices.append_array([base + idx[t], base + idx[t + 1], base + idx[t + 2]])
+	return _commit(verts, normals, uvs, indices)
+
+
 ## Engine plume: surface of revolution along +Z (nozzle at z=0, tail at z=1),
 ## radius 1 at the nozzle, slight bulge just behind it, then a soft taper.
 ## UV.y runs 0 (nozzle) -> 1 (tail) for the flame shader.
-static func plume(segments: int = 18, rings: int = 28) -> ArrayMesh:
+static func plume(segments: int = 14, rings: int = 20) -> ArrayMesh:
 	var verts := PackedVector3Array()
 	var normals := PackedVector3Array()
 	var uvs := PackedVector2Array()
@@ -452,5 +488,15 @@ static func noise_textures(seed_value: int) -> Array[Texture2D]:
 	img_n.bump_map_to_normal_map(6.0)
 	img_n.generate_mipmaps()
 	var tex_n := ImageTexture.create_from_image(img_n)
-	var out: Array[Texture2D] = [tex, tex_n]
+	# packed: rgb = normal map, a = height  (one fetch gives both)
+	var src := n.get_seamless_image(256, 256)
+	var packed := img_n.duplicate() as Image
+	packed.clear_mipmaps()
+	for y in 256:
+		for x in 256:
+			var c := packed.get_pixel(x, y)
+			c.a = src.get_pixel(x, y).r
+			packed.set_pixel(x, y, c)
+	packed.generate_mipmaps()
+	var out: Array[Texture2D] = [tex, tex_n, ImageTexture.create_from_image(packed)]
 	return out

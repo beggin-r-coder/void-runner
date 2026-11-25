@@ -17,7 +17,8 @@ var exit_mask: PackedByteArray = PackedByteArray()
 var attempts: int = 1
 var fell_back: bool = false
 var root: Node3D                # active visual root while spawned
-var pickup_nodes: Array = []
+var orb_mm: MultiMeshInstance3D       # all energy orbs of this chunk: one draw
+var pickup_alive: PackedByteArray = PackedByteArray()
 
 
 func z_end() -> float:

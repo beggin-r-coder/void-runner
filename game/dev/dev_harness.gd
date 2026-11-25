@@ -107,6 +107,8 @@ func setup(p_game: Node) -> void:
 		game.distance_cap = _soak_distance
 		game.session.state_changed.connect(_on_soak_state)
 		_start_soak.call_deferred()
+	elif flags.has("perf"):
+		_perf.call_deferred()
 	elif flags.has("trace-steer"):
 		_trace_steer.call_deferred()
 	elif flags.has("autotest"):
@@ -467,6 +469,68 @@ func _autotest() -> void:
 	await _stop_if_until(_si("tilt"))
 
 
+# --- performance profile ---------------------------------------------------------
+
+## Flies each world for N seconds (autopilot) and reports frame time, draw calls,
+## primitives, CPU script time and chunk-planning spikes. Use under a real
+## renderer (Xvfb + lavapipe): software rasterisation makes frame time scale
+## with shading work, a useful proxy for mobile GPU cost.
+func _perf() -> void:
+	var g := game
+	var secs := float(flags.get("perf", "6"))
+	Save.data["tutorial_done"] = true
+	g.autopilot_runs = true
+	g.invulnerable_runs = true
+	g._start_run()
+	await _wait(func() -> bool: return g.session.state == RunSession.State.RUNNING, 10.0)
+	var diff: DifficultyProfile = g.DIFFICULTY
+	var rows: PackedStringArray = []
+	var all_ft: Array = []
+	for w in diff.theme_count:
+		_warp_to(w * diff.theme_length + 250.0)
+		await _frames(30)  # settle after warp
+		g.director.plan_usec_max = 0
+		g.director.main_usec_max = 0
+		var ft: Array = []
+		var dc := 0.0
+		var prims := 0.0
+		var objs := 0.0
+		var proc := 0.0
+		var phys := 0.0
+		var n := 0
+		var t := 0.0
+		var last := Time.get_ticks_usec()
+		while t < secs:
+			await g.get_tree().process_frame
+			var now := Time.get_ticks_usec()
+			var ms := (now - last) / 1000.0
+			last = now
+			t += ms / 1000.0
+			ft.append(ms)
+			dc += RenderingServer.get_rendering_info(RenderingServer.RENDERING_INFO_TOTAL_DRAW_CALLS_IN_FRAME)
+			prims += RenderingServer.get_rendering_info(RenderingServer.RENDERING_INFO_TOTAL_PRIMITIVES_IN_FRAME)
+			objs += RenderingServer.get_rendering_info(RenderingServer.RENDERING_INFO_TOTAL_OBJECTS_IN_FRAME)
+			proc += Performance.get_monitor(Performance.TIME_PROCESS) * 1000.0
+			phys += Performance.get_monitor(Performance.TIME_PHYSICS_PROCESS) * 1000.0
+			n += 1
+		ft.sort()
+		all_ft.append_array(ft)
+		var avg := 0.0
+		for v in ft:
+			avg += v
+		avg /= maxf(ft.size(), 1)
+		rows.append("[perf] %-15s frames=%4d avg=%6.1fms p95=%6.1fms fps=%5.1f draws=%5.0f prims=%7.0fk objs=%4.0f cpu_process=%5.2fms cpu_physics=%5.2fms plan_max=%5.1fms main_director_max=%5.1fms" % [
+			g.THEMES[w].display_name, n, avg, ft[int(ft.size() * 0.95)], 1000.0 / avg, dc / n, prims / n / 1000.0, objs / n, proc / n, phys / n, g.director.plan_usec_max / 1000.0, g.director.main_usec_max / 1000.0])
+	for r in rows:
+		print(r)
+	all_ft.sort()
+	var tot := 0.0
+	for v in all_ft:
+		tot += v
+	print("[perf] OVERALL avg=%.1fms p95=%.1fms fps=%.1f  plan avg=%.2fms (n=%d)" % [tot / all_ft.size(), all_ft[int(all_ft.size() * 0.95)], 1000.0 * all_ft.size() / tot, g.director.plan_usec_total / 1000.0 / maxi(g.director.plan_count, 1), g.director.plan_count])
+	finish(0)
+
+
 # --- steering trace (smoothness measurement) -------------------------------------
 
 var _trace_rows: PackedStringArray = PackedStringArray()
@@ -642,7 +706,7 @@ func _on_soak_state(_prev: int, cur: int) -> void:
 	var survived := 0
 	for r in _soak_log:
 		survived += int(r["survived"])
-	var prewarm := {&"obs_0": 64, &"obs_1": 96, &"obs_2": 40, &"obs_3": 12, &"orb": 48, &"dress_0": 9, &"dress_1": 9, &"dress_2": 9}
+	var prewarm := {&"obs_0": 64, &"obs_1": 96, &"obs_2": 40, &"obs_3": 12, &"orbs": 8}
 	print("[soak] SUMMARY: %d/%d runs reached %d m; pool created %d -> %d" % [survived, _soak_log.size(), int(_soak_distance), _soak_log[0]["created"], _soak_log[_soak_log.size() - 1]["created"]])
 	print("[soak] pool created/peak per key: ", pool.stats())
 	var leak_free := pool.leak_free(prewarm)

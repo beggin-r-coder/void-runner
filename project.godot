@@ -7,7 +7,7 @@ config_version=5
 
 config/name="Void Runner"
 config/description="High-speed immersive spaceship flying through alien planets, asteroid fields and abandoned civilizations."
-config/version="0.1.0"
+config/version="0.1.1"
 run/main_scene="res://game/scenes/main.tscn"
 config/features=PackedStringArray("4.7", "Mobile")
 boot_splash/bg_color=Color(0.02, 0.02, 0.05, 1)

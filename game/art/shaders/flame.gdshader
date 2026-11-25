@@ -15,27 +15,10 @@ uniform float wobble = 0.05;        // undulation amplitude (metres, grows to th
 uniform float seed = 0.0;
 uniform float sheath = 0.0;         // 1 = outer heat sheath layer
 uniform float radius_scale = 0.17;  // node radius scale: converts metres to mesh units
+uniform sampler2D noise_tex : hint_default_white, filter_linear_mipmap, repeat_enable;
 
 varying float v_t;
 varying vec3 v_p;
-
-float hash13(vec3 p) {
-	p = fract(p * 0.1031);
-	p += dot(p, p.zyx + 31.32);
-	return fract((p.x + p.y) * p.z);
-}
-
-float vnoise(vec3 p) {
-	vec3 i = floor(p);
-	vec3 f = fract(p);
-	f = f * f * (3.0 - 2.0 * f);
-	return mix(mix(mix(hash13(i), hash13(i + vec3(1, 0, 0)), f.x), mix(hash13(i + vec3(0, 1, 0)), hash13(i + vec3(1, 1, 0)), f.x), f.y),
-			mix(mix(hash13(i + vec3(0, 0, 1)), hash13(i + vec3(1, 0, 1)), f.x), mix(hash13(i + vec3(0, 1, 1)), hash13(i + vec3(1, 1, 1)), f.x), f.y), f.z);
-}
-
-float fbm(vec3 p) {
-	return vnoise(p) * 0.55 + vnoise(p * 2.07 + 3.1) * 0.3 + vnoise(p * 4.13 + 7.7) * 0.15;
-}
 
 void vertex() {
 	float t = UV.y;
@@ -57,10 +40,14 @@ void fragment() {
 	float facing = abs(dot(NORMAL, VIEW));
 	float time = TIME + seed * 13.0;
 	// turbulence advected backwards along the plume
-	// stretched along the flow -> streaks that stream backwards
-	vec3 q = vec3(v_p.xy * (4.5 - sheath * 2.0), t * 2.6 - time * flow_speed * 0.55 * (1.0 - sheath * 0.45));
-	float n = fbm(q);
-	float n2 = fbm(q * 1.9 + vec3(0.0, 0.0, -time * 2.0));
+	// streaks streaming backwards: two lookups of a tiling noise texture
+	// (around the plume x along it) instead of per-pixel procedural fbm
+	float ang = atan(v_p.y, v_p.x) / 6.2831853 * (3.0 - sheath);
+	float flow = t * 1.3 - time * flow_speed * 0.28 * (1.0 - sheath * 0.45);
+	float n = texture(noise_tex, vec2(ang, flow)).r;
+	float n2 = texture(noise_tex, vec2(ang * 2.0 + 0.37, flow * 1.9 - time * 0.9)).r;
+	n = clamp((n - 0.25) * 2.0, 0.0, 1.0);
+	n2 = clamp((n2 - 0.25) * 2.0, 0.0, 1.0);
 	float fade = pow(clamp(1.0 - t, 0.0, 1.0), 1.35 + sheath);
 	float nozzle_soft = smoothstep(0.0, 0.06, t);
 	float body = pow(facing, 1.4) * fade;

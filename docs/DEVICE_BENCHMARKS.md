@@ -13,6 +13,31 @@ cycles without crash, pool growth or stale input; download ≤ 150 MB.
 | midrange | 6 GB | | | | High | | | | | | |
 | modern | 8 GB | | | | High | | | | | | |
 
+## Field report: build 0.1.0, 2026-11-26
+
+| Device | RAM | SoC / GPU | OS | Result |
+|---|---|---|---|---|
+| Xiaomi 26021RN18I | 8 GB | Snapdragon 4 Gen 4 | Android 16 | "Laggy, didn't feel playful", Low preset included → optimisation pass in 0.1.1 |
+
+## Optimisation pass (0.1.1) - measured with `tools/perf.sh` at 2400x1080
+
+Software rendering (lavapipe), so absolute numbers are not phone numbers; frame time scales
+with per-pixel shading and draw work, which is what changed.
+
+| Build / preset | avg frame | p95 frame | draw calls | primitives (Shattered Belt) | main-thread chunk planning spike |
+|---|---|---|---|---|---|
+| 0.1.0 High (native 2400x1080) | 307 ms | 380 ms | ~330 | 1.32 M | 5-15 ms (desktop CPU) |
+| 0.1.1 High (FSR from ~760p) | **126 ms** | **149 ms** | **~190** | **0.19 M** | **≤1.6 ms** (planning on a worker thread) |
+| 0.1.0 Low | 157 ms | 191 ms | | | |
+| 0.1.1 Low (FSR from ~620p) | **82 ms** | **97 ms** | | | |
+
+What changed: FSR 1.0 upscaling from ~760p (UI stays native) + dynamic resolution + 60 fps cap;
+ship ~60 → ~20 draws (merged static parts, instanced petals); orbs one instanced draw per chunk;
+no shadow pass for scenery; 6 spawned chunks instead of 8; low-poly decoration asteroids;
+sky noise in the quarter-resolution pass; rock shader 9 → 6 fetches (2 on scenery), no
+vertex fetches on scenery; flame noise from a texture instead of per-pixel hashing; post
+effect without per-frame mipmaps; shader warm-up at start + export shader baker.
+
 ## Automated (non-device) evidence, 2026-11-24
 
 | Check | Result |

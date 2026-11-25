@@ -29,7 +29,7 @@ func setup(p_ship: FlightController, p_cfg: HandlingConfig) -> void:
 	cfg = p_cfg
 	fov = cfg.fov_base
 	near = 0.1
-	far = 1400.0
+	far = 900.0
 	snap()
 
 

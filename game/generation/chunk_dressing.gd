@@ -35,14 +35,14 @@ func build() -> void:
 			_ring = _mi(meshes["ring"])
 			_mm_main = _mmi(meshes["spire"], 22)
 			_mm_glow = _mmi(meshes["shard"], 22)
-			var asts: Array = meshes["asteroids"]
+			var asts: Array = meshes["asteroids_lo"]
 			_mm_alt = _mmi(asts[2], 7)
 			_mm_stem = _mmi(meshes["cyl"], 7)
 			_mm_glow_b = _mmi(meshes["shard"], 14)
 		1:
-			var asts: Array = meshes["asteroids"]
-			_mm_main = _mmi(asts[0], 34)
-			_mm_alt = _mmi(asts[3], 34)
+			var asts: Array = meshes["asteroids_lo"]
+			_mm_main = _mmi(asts[0], 26)
+			_mm_alt = _mmi(asts[3], 26)
 			_mm_glow = _mmi(meshes["shard"], 10)
 			_hero = _mi(asts[5])
 		_:
@@ -58,6 +58,7 @@ func build() -> void:
 func _mi(mesh: Mesh = null) -> MeshInstance3D:
 	var m := MeshInstance3D.new()
 	m.mesh = mesh
+	m.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF  # scenery: no shadow pass
 	add_child(m)
 	return m
 
@@ -69,6 +70,7 @@ func _mmi(mesh: Mesh, count: int) -> MultiMeshInstance3D:
 	mm.instance_count = count
 	var inst := MultiMeshInstance3D.new()
 	inst.multimesh = mm
+	inst.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	add_child(inst)
 	return inst
 

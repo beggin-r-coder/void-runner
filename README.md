@@ -38,6 +38,7 @@ DashPanda Studios · Android · Godot 4.7.2 (pinned) · typed GDScript · landsc
 | Scoring contract `floor(distance) + Σ 40 × combo`, combo ≤ 5, 4 s expiry, one payout per obstacle id | ✅ tested |
 | Near-miss feedback: popup, combo chevrons, sparks, FOV kick, hit-stop, whoosh, haptics | ✅ |
 | Tilt steering (gyro/gravity sensor), toggle + sensitivity in Settings, auto-calibration per run, recalibrate in pause, touch fallback without a sensor | ✅ unit test + autotest stage `tilt` (simulated sensor) |
+| Mobile performance: FSR upscaling + dynamic resolution + 60 fps cap (UI native), ~190 draws/frame, async chunk planning, shader warm-up + export shader baker | ✅ `tools/perf.sh` (see DEVICE_BENCHMARKS.md) |
 | Interceptor ship: faceted lofted fuselage with glowing chines, gem-cut canopy, cranked arrow wings with lit leading edges and livery chevrons, anhedral tip fins, swept twin tails, lofted engine pods with intakes; two-tone hull shader with panel lines and spine stripe | ✅ |
 | Thrusters: petal nozzles that iris open with throttle, spinning glowing turbines, surge heat rings, wingtip RCS jets that fire on lateral acceleration, red/green nav lights and a double-flash strobe | ✅ |
 | Fluid engine plume: swept plume mesh + flow shader (turbulence streaming back, travelling-wave undulation, breathing radius, shock diamonds, white-hot→livery gradient), soft heat sheath, tail that lags lateral motion (spring), eased length, thrust surges on launch / roll / near miss | ✅ |
@@ -153,6 +154,8 @@ ffmpeg -i /tmp/tour.avi -af volumedetect -vn -f null -
 | `--quality=low\|high`, `--reduced-motion`, `--invert-y` | Settings overrides (in-memory with `--fresh`) |
 | `--autopilot` | Runs flown by the route follower (invulnerable) |
 | `--soak=N`, `--soak-distance=M` | Soak test |
+| `--perf=SECONDS` | Fly every world for N s and report frame time, draw calls, primitives, CPU and chunk-planning spikes (`tools/perf.sh`) |
+| `--mobile-sim` | Activate the mobile performance governor on desktop (FSR + dynamic resolution + 60 fps cap) |
 | `--tilt` | Turn the tilt-steering setting on (no sensor on desktop → touch fallback note) |
 | `--fake-tilt=P,R` | Simulate a phone held reclined P deg and rolled R deg (drives tilt steering on desktop) |
 | `--trace-steer=CSV` | Scripted touch drags (steps + shaky hold) logged per physics frame: t, target, filtered target, x, vx, ax |

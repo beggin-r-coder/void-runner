@@ -126,7 +126,7 @@ static func build(livery_id: String, mats: GameMaterials) -> Dictionary:
 	# --- engines -----------------------------------------------------------------
 	var flames: Array[MeshInstance3D] = []
 	var nozzles: Array[Node3D] = []
-	var petals: Array[Node3D] = []
+	var petals: Array = []  # MultiMesh per engine
 	var turbines: Array[Node3D] = []
 	var heat_rings: Array[MeshInstance3D] = []
 	var plume_mesh := MeshFactory.plume()
@@ -169,29 +169,24 @@ static func build(livery_id: String, mats: GameMaterials) -> Dictionary:
 		throat.bottom_radius = 0.16
 		throat.height = 0.04
 		_part(nz, throat, glow_mat, Vector3(0, 0, 0.0), Vector3(90, 0, 0))
-		for i in 10:
-			var holder := Node3D.new()
-			holder.rotation = Vector3(0, 0, TAU * i / 10.0)
-			nz.add_child(holder)
-			var hinge := Node3D.new()
-			hinge.position = Vector3(0, 0.205, 0.0)
-			holder.add_child(hinge)
-			var pm := MeshInstance3D.new()
-			pm.mesh = petal_mesh
-			pm.material_override = trim
-			pm.position = Vector3(0, 0, 0.1)
-			hinge.add_child(pm)
-			petals.append(hinge)
-		var turb := Node3D.new()
+		# 10 petals in one MultiMesh (one draw); SpeedFX updates their hinge angle
+		var pmm := MultiMesh.new()
+		pmm.transform_format = MultiMesh.TRANSFORM_3D
+		pmm.mesh = petal_mesh
+		pmm.instance_count = 10
+		var pmi := MultiMeshInstance3D.new()
+		pmi.multimesh = pmm
+		pmi.material_override = trim
+		nz.add_child(pmi)
+		petals.append(pmm)
+		var turb := MeshInstance3D.new()
+		var blades: Array = []
+		for i in 6:
+			blades.append([blade, Transform3D(Basis.from_euler(Vector3(0.0, 0.35, TAU * i / 6.0)), Vector3.ZERO)])
+		turb.mesh = MeshFactory.merge(blades)
+		turb.material_override = glow_mat
 		turb.position = Vector3(0, 0, 0.03)
 		nz.add_child(turb)
-		for i in 6:
-			var bl := MeshInstance3D.new()
-			bl.mesh = blade
-			bl.material_override = glow_mat
-			bl.rotation = Vector3(0.0, 0.35, TAU * i / 6.0)
-			bl.position = Vector3(0, 0, 0)
-			turb.add_child(bl)
 		turbines.append(turb)
 		var hr := MeshInstance3D.new()
 		hr.mesh = ring_mesh
@@ -257,6 +252,7 @@ static func build(livery_id: String, mats: GameMaterials) -> Dictionary:
 	strobe.material_override = mats.energy(Color(1, 1, 1), 9.0)
 	strobe.position = Vector3(0, 0.22, 1.48)
 	strobe.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	strobe.set_meta("animated", true)
 	root.add_child(strobe)
 	# soft under-glow strip
 	var under := BoxMesh.new()
@@ -272,7 +268,40 @@ static func build(livery_id: String, mats: GameMaterials) -> Dictionary:
 	key.shadow_enabled = false
 	root.add_child(key)
 
+	_merge_static(root)
 	return {"root": root, "flames": flames, "wingtips": wingtips, "nozzles": nozzles, "petals": petals, "turbines": turbines, "heat_rings": heat_rings, "rcs": rcs, "strobes": [strobe], "accent": accent_c, "flame_color": flame_c}
+
+
+## Collapses every static MeshInstance3D that is a direct child of the ship
+## root into one mesh per material (~60 draw calls -> ~10). Animated parts
+## live under other nodes and are untouched.
+static func _merge_static(root: Node3D) -> void:
+	var groups := {}
+	var order: Array = []
+	for c in root.get_children():
+		if c is MeshInstance3D and not (c as MeshInstance3D).has_meta("animated"):
+			var mi := c as MeshInstance3D
+			var key: Material = mi.material_override
+			if not groups.has(key):
+				groups[key] = []
+				order.append(key)
+			(groups[key] as Array).append([mi.mesh, mi.transform])
+			for gc in mi.get_children():
+				if gc is MeshInstance3D:
+					var g2 := gc as MeshInstance3D
+					var k2: Material = g2.material_override
+					if not groups.has(k2):
+						groups[k2] = []
+						order.append(k2)
+					(groups[k2] as Array).append([g2.mesh, mi.transform * g2.transform])
+			root.remove_child(mi)
+			mi.free()
+	for key in order:
+		var merged := MeshInstance3D.new()
+		merged.mesh = MeshFactory.merge(groups[key])
+		merged.material_override = key
+		merged.name = "Merged"
+		root.add_child(merged)
 
 
 ## Thin glowing bar between two points (leading-edge lights).

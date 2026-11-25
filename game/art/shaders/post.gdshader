@@ -3,7 +3,7 @@ shader_type canvas_item;
 // aberration, vignette and full-screen flashes. The centre stays sharp so
 // hazards remain readable.
 
-uniform sampler2D screen_tex : hint_screen_texture, filter_linear_mipmap;
+uniform sampler2D screen_tex : hint_screen_texture, filter_linear;  // no per-frame mipmap chain
 uniform float intensity = 0.0;
 uniform float vignette = 0.38;
 uniform float flash = 0.0;
@@ -23,10 +23,10 @@ void fragment() {
 	if (intensity > 0.02) {
 		vec3 acc = col;
 		float blur = 0.022 * intensity * edge;
-		for (int i = 1; i <= 4; i++) {
-			acc += texture(screen_tex, uv - c * blur * float(i)).rgb;
+		for (int i = 1; i <= 3; i++) {
+			acc += texture(screen_tex, uv - c * blur * float(i) * 1.3).rgb;
 		}
-		col = acc / 5.0;
+		col = acc / 4.0;
 	}
 	col *= 1.0 - vignette * smoothstep(0.3, 1.0, r);
 	col = mix(col, flash_color, clamp(flash * (0.35 + r * 0.8), 0.0, 1.0));

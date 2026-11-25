@@ -25,6 +25,15 @@ var prepared_ahead: int = 2
 var rejected_layouts: int = 0
 var fallback_count: int = 0
 var run_seed: int = 0
+## perf instrumentation: planning cost (any thread) and main-thread time in update
+var plan_usec_max: int = 0
+var plan_usec_total: int = 0
+var plan_count: int = 0
+var main_usec_max: int = 0
+## Plan new chunks on a WorkerThreadPool task (removes main-thread hitches).
+var async_planning: bool = true
+var _task_id: int = -1
+var _task_plan: ChunkPlan
 
 var _recovery_def: ChunkDefinition
 var _next_z: float = 0.0
@@ -49,6 +58,7 @@ func setup(p_handling: HandlingConfig, p_difficulty: DifficultyProfile, p_dresse
 
 
 func reset(seed_value: int, ship_z: float = 0.0, start_distance: float = 0.0, opening_recovery: int = 2) -> void:
+	_drop_pending()
 	clear()
 	run_seed = seed_value
 	seeds.reset(seed_value, GENERATOR_VERSION)
@@ -62,7 +72,7 @@ func reset(seed_value: int, ship_z: float = 0.0, start_distance: float = 0.0, op
 	_last_theme = difficulty.theme_for(maxf(_next_distance, 0.0))
 	rejected_layouts = 0
 	fallback_count = 0
-	fill(1000)
+	fill(1000, false)
 
 
 func clear() -> void:
@@ -79,21 +89,70 @@ func speed_at(distance: float) -> float:
 
 ## Call once per physics frame. `budget` limits scene activations per frame.
 func update_for_ship(ship_z: float, budget: int = 1) -> void:
+	var t0 := Time.get_ticks_usec()
 	while not plans.is_empty() and plans[0].z_end() > ship_z + DESPAWN_BEHIND:
 		var p: ChunkPlan = plans.pop_front()
 		if dresser:
 			dresser.despawn(p)
-	fill(budget)
+	fill(budget, async_planning)
+	main_usec_max = maxi(main_usec_max, Time.get_ticks_usec() - t0)
 
 
-func fill(budget: int) -> void:
+## Keeps active + prepared plans available. With `async`, chunks beyond the
+## active window are planned on a worker thread; only an active-window
+## shortfall is planned synchronously.
+func fill(budget: int, async: bool = false) -> void:
+	if _task_id >= 0 and WorkerThreadPool.is_task_completed(_task_id):
+		_finish_pending()
 	while plans.size() < active_target + prepared_ahead:
-		plans.append(_plan_next())
+		if async and plans.size() >= active_target:
+			if _task_id < 0:
+				_task_id = WorkerThreadPool.add_task(_plan_task, false, "void_runner_plan")
+			break
+		_finish_pending()
+		if plans.size() >= active_target + prepared_ahead:
+			break
+		_append(_plan_next())
 	var spawned := 0
 	for i in mini(active_target, plans.size()):
 		if plans[i].root == null and dresser and spawned < budget:
 			dresser.spawn(plans[i], self, seeds.stream("cosmetic"))
 			spawned += 1
+
+
+func _plan_task() -> void:
+	_task_plan = _plan_next()
+
+
+func _finish_pending() -> void:
+	if _task_id < 0:
+		return
+	WorkerThreadPool.wait_for_task_completion(_task_id)
+	_task_id = -1
+	var plan := _task_plan
+	_task_plan = null
+	if plan:
+		_append(plan)
+
+
+## Waits for an in-flight plan and discards it (the run is being reset).
+func _drop_pending() -> void:
+	if _task_id >= 0:
+		WorkerThreadPool.wait_for_task_completion(_task_id)
+		_task_id = -1
+	_task_plan = null
+
+
+## Main thread: give the plan its world position and queue it.
+func _append(plan: ChunkPlan) -> void:
+	plan.z_start = _next_z
+	_next_z -= plan.length
+	plans.append(plan)
+	chunk_planned.emit(plan)
+
+
+func _exit_tree() -> void:
+	_drop_pending()
 
 
 func shift_origin(dz: float) -> void:
@@ -145,6 +204,16 @@ func _pick(band: int, rng: RandomNumberGenerator) -> ChunkDefinition:
 
 
 func _plan_next() -> ChunkPlan:
+	var t0 := Time.get_ticks_usec()
+	var plan := _plan_next_impl()
+	var dt := Time.get_ticks_usec() - t0
+	plan_usec_max = maxi(plan_usec_max, dt)
+	plan_usec_total += dt
+	plan_count += 1
+	return plan
+
+
+func _plan_next_impl() -> ChunkPlan:
 	var dist := maxf(_next_distance, 0.0)
 	var band := difficulty.band_for(dist)
 	var theme := difficulty.theme_for(dist)
@@ -200,16 +269,13 @@ func _plan_next() -> ChunkPlan:
 	if not plan.safe_path.is_empty():
 		var last := plan.safe_path[plan.safe_path.size() - 1]
 		_route_cell = grid.cell_index(Vector2(last.x, last.y))
-	plan.z_start = _next_z
 	plan.start_distance = _next_distance
 	_place_pickups(plan, seeds.stream("pickup"))
 	_exit_mask = result["exit"]
 	if not def.is_recovery:
 		_pressure += def.length
-	_next_z -= def.length
 	_next_distance += def.length
 	_chunk_index += 1
-	chunk_planned.emit(plan)
 	return plan
 
 

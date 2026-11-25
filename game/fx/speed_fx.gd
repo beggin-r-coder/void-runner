@@ -27,6 +27,8 @@ var rcs: Dictionary = {}
 var _rcs_level: Vector2 = Vector2.ZERO  # x = left jet, y = right jet
 var _prev_lat_vel: Vector2 = Vector2.ZERO
 var _anim_t: float = 0.0
+var _petal_open: float = 0.05
+var _petal_applied: float = -1.0
 # world weather + sector warp
 var weather: GPUParticles3D
 var _weather_kind: int = -1
@@ -96,6 +98,7 @@ func attach_ship(ship_parts: Dictionary, mats: GameMaterials, world: Node3D) -> 
 	sparks.clear()
 	flames = ship_parts["flames"]
 	petals = ship_parts.get("petals", [])
+	_petal_applied = -1.0
 	turbines = ship_parts.get("turbines", [])
 	heat_rings = ship_parts.get("heat_rings", [])
 	strobes = ship_parts.get("strobes", [])
@@ -151,9 +154,16 @@ func _animate_ship(delta: float, speed_t: float, flying: bool, lat_vel: Vector2)
 	_anim_t += delta
 	var th := _throttle
 	# petal nozzles iris open with throttle and surges
-	var open := deg_to_rad(3.0 + 13.0 * clampf(th - 0.4, 0.0, 1.2))
-	for h in petals:
-		(h as Node3D).rotation.x = lerpf((h as Node3D).rotation.x, -open, 1.0 - exp(-8.0 * delta))
+	var open_goal := deg_to_rad(3.0 + 13.0 * clampf(th - 0.4, 0.0, 1.2))
+	_petal_open = lerpf(_petal_open, open_goal, 1.0 - exp(-8.0 * delta))
+	if absf(_petal_open - _petal_applied) > 0.002:
+		_petal_applied = _petal_open
+		for mm in petals:
+			var pm := mm as MultiMesh
+			for i in pm.instance_count:
+				var t := Transform3D(Basis(Vector3(0, 0, 1), TAU * i / pm.instance_count), Vector3.ZERO)
+				t = t * Transform3D(Basis.IDENTITY, Vector3(0, 0.205, 0)) * Transform3D(Basis(Vector3(1, 0, 0), -_petal_open), Vector3.ZERO) * Transform3D(Basis.IDENTITY, Vector3(0, 0, 0.1))
+				pm.set_instance_transform(i, t)
 	for t in turbines:
 		(t as Node3D).rotation.z += delta * (6.0 + 34.0 * th)
 	for r in heat_rings:

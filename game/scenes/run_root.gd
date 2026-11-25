@@ -32,6 +32,7 @@ var score: ScoreService
 var sensor: NearMissSensor = NearMissSensor.new()
 var input: InputRouter
 var tilt: TiltInput
+var governor: PerfGovernor
 var mats: GameMaterials
 var world: Node3D
 var dresser: WorldDresser
@@ -87,6 +88,9 @@ func _ready() -> void:
 	input = InputRouter.new()
 	input.name = "InputRouter"
 	add_child(input)
+	governor = PerfGovernor.new()
+	governor.name = "PerfGovernor"
+	add_child(governor)
 	tilt = TiltInput.new()
 	tilt.name = "TiltInput"
 	add_child(tilt)
@@ -104,6 +108,9 @@ func _ready() -> void:
 	director.name = "CorridorDirector"
 	world.add_child(director)
 	director.setup(cfg, DIFFICULTY, dresser)
+	# 6 spawned chunks (~600 m) comfortably exceed the 2 s preview at 65 m/s;
+	# the far ones were hidden in fog anyway (saves ~25% draws).
+	director.active_target = 6
 	_follower = RouteFollower.new(director)
 
 	ship = FlightController.new()
@@ -130,6 +137,7 @@ func _ready() -> void:
 	_build_ui()
 	_apply_settings()
 	session.state_changed.connect(_on_state_changed)
+	_warm_shaders()
 	dev = preload("res://game/dev/dev_harness.gd").new()
 	dev.name = "DevHarness"
 	add_child(dev)
@@ -139,6 +147,38 @@ func _ready() -> void:
 
 
 # --- construction ---------------------------------------------------------------
+
+## Draws every world's materials once (tiny, in front of the camera, for a few
+## frames) so mobile GPU drivers compile their pipelines now, behind the menu,
+## instead of hitching when a new world appears mid-run.
+func _warm_shaders() -> void:
+	var holder := Node3D.new()
+	holder.name = "ShaderWarmup"
+	cam.add_child(holder)
+	var box := BoxMesh.new()
+	box.size = Vector3(0.02, 0.02, 0.02)
+	var i := 0
+	for m in mats.all_materials():
+		var mi := MeshInstance3D.new()
+		mi.mesh = box
+		mi.material_override = m
+		mi.position = Vector3(-0.3 + (i % 12) * 0.05, -0.2 + (i / 12) * 0.05, -1.0)
+		mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_ON
+		holder.add_child(mi)
+		i += 1
+	# a few multimesh / particle variants also get their own pipelines
+	var mm := MultiMesh.new()
+	mm.transform_format = MultiMesh.TRANSFORM_3D
+	mm.mesh = box
+	mm.instance_count = 1
+	for m in [mats.themes[0]["deco_rock"], mats.themes[0]["crystal"]]:
+		var mmi := MultiMeshInstance3D.new()
+		mmi.multimesh = mm
+		mmi.material_override = m
+		mmi.position = Vector3(0.3, 0.2, -1.0)
+		holder.add_child(mmi)
+	get_tree().create_timer(0.35).timeout.connect(holder.queue_free)
+
 
 func _build_environment() -> void:
 	sun = DirectionalLight3D.new()
@@ -155,6 +195,8 @@ func _build_environment() -> void:
 	sky_mat.shader = SKY_SHADER
 	sky.sky_material = sky_mat
 	sky.radiance_size = Sky.RADIANCE_SIZE_64
+	# spread reflection-probe updates over frames (theme blends change the sky)
+	sky.process_mode = Sky.PROCESS_MODE_INCREMENTAL
 	env.sky = sky
 	env.ambient_light_source = Environment.AMBIENT_SOURCE_COLOR
 	env.reflected_light_source = Environment.REFLECTION_SOURCE_SKY
@@ -231,7 +273,7 @@ func _apply_settings() -> void:
 	fx.quality_high = high_quality
 	var vp := get_viewport()
 	vp.msaa_3d = Viewport.MSAA_2X if high_quality else Viewport.MSAA_DISABLED
-	vp.scaling_3d_scale = 1.0 if high_quality else 0.75
+	governor.configure(high_quality)  # render scale / FSR / dynamic resolution
 	env.glow_bloom = 0.05 if high_quality else 0.02
 
 
@@ -557,12 +599,15 @@ func _collect_pickups() -> void:
 	var sp := ship.global_position
 	for p in director.plans:
 		var plan := p as ChunkPlan
-		if plan.root == null or sp.z > plan.z_start + 5.0 or sp.z < plan.z_end() - 5.0:
+		if plan.root == null or plan.pickups.is_empty() or sp.z > plan.z_start + 5.0 or sp.z < plan.z_end() - 5.0:
 			continue
-		for orb in plan.pickup_nodes.duplicate():
-			if (orb as Node3D).global_position.distance_to(sp) < 2.0:
+		for i in plan.pickups.size():
+			if plan.pickup_alive[i] == 0:
+				continue
+			var wp := plan.pickups[i] + Vector3(0, 0, plan.z_start)
+			if wp.distance_squared_to(sp) < 4.0:
 				score.orbs += 1
-				dresser.collect_orb(plan, orb)
+				dresser.collect_orb(plan, i)
 				Sfx.play("chime", 1.0 + 0.05 * (score.orbs % 8))
 
 
