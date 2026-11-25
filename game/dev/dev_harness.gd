@@ -707,6 +707,8 @@ func _on_soak_state(_prev: int, cur: int) -> void:
 	for r in _soak_log:
 		survived += int(r["survived"])
 	var prewarm := {&"obs_0": 64, &"obs_1": 96, &"obs_2": 40, &"obs_3": 12, &"orbs": 8}
+	for k in 6:
+		prewarm[StringName("dress_%d" % k)] = 7
 	print("[soak] SUMMARY: %d/%d runs reached %d m; pool created %d -> %d" % [survived, _soak_log.size(), int(_soak_distance), _soak_log[0]["created"], _soak_log[_soak_log.size() - 1]["created"]])
 	print("[soak] pool created/peak per key: ", pool.stats())
 	var leak_free := pool.leak_free(prewarm)

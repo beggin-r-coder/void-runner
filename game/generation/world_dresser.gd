@@ -27,7 +27,7 @@ func setup(p_profiles: Array, p_materials: GameMaterials) -> void:
 	pool.register(&"orbs", _make_orbs, 8)
 	for kind in 6:
 		var dk := kind
-		pool.register(StringName("dress_%d" % kind), func() -> Node: return _make_dressing(dk), 9)
+		pool.register(StringName("dress_%d" % kind), func() -> Node: return _make_dressing(dk), 7)  # 6 active chunks + 1
 
 
 func _build_meshes() -> void:
