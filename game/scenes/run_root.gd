@@ -31,6 +31,7 @@ var session: RunSession = RunSession.new()
 var score: ScoreService
 var sensor: NearMissSensor = NearMissSensor.new()
 var input: InputRouter
+var tilt: TiltInput
 var mats: GameMaterials
 var world: Node3D
 var dresser: WorldDresser
@@ -86,6 +87,9 @@ func _ready() -> void:
 	input = InputRouter.new()
 	input.name = "InputRouter"
 	add_child(input)
+	tilt = TiltInput.new()
+	tilt.name = "TiltInput"
+	add_child(tilt)
 	mats = GameMaterials.new(THEMES)
 	_build_environment()
 
@@ -106,6 +110,7 @@ func _ready() -> void:
 	ship.name = "Ship"
 	world.add_child(ship)
 	ship.setup(cfg, input)
+	ship.tilt = tilt
 	ship.crashed.connect(_on_crash)
 	ship.rolled.connect(_on_rolled)
 	cam = ChaseCamera.new()
@@ -205,6 +210,7 @@ func _build_ui() -> void:
 	ui.setting_changed.connect(_on_setting_changed)
 	ui.livery_selected.connect(_on_livery_selected)
 	ui.roll_pressed.connect(_try_roll)
+	ui.recalibrate_pressed.connect(_recalibrate_tilt)
 	ui.hangar_toggled.connect(func(open: bool) -> void: cam.framing_target = 1.0 if open else 0.0)
 
 
@@ -217,6 +223,8 @@ func _apply_settings() -> void:
 	high_quality = str(s["quality"]) == "high"
 	cam.reduced_motion = reduced_motion
 	ship.invert_y = bool(s["invert_y"])
+	tilt.enabled = bool(s["tilt"])
+	tilt.sensitivity = float(s["tilt_sensitivity"])
 	Sfx.volume = float(s["sfx_volume"])
 	post_rect.visible = high_quality
 	sun.shadow_enabled = high_quality
@@ -357,6 +365,8 @@ func _start_run() -> void:
 	survived_cap = false
 	input.reset()
 	input.touched_this_run = false
+	if tilt.enabled:
+		tilt.calibrate()
 	ui.show_screen("hud")
 	ui.show_hint(tutorial)
 	_tutorial_t = 0.0
@@ -443,6 +453,7 @@ func _physics_process(delta: float) -> void:
 	var roll_z: float = ship.visual.rotation.z if ship.visual else 0.0
 	fx.update_fx(speed_t, flying, delta, ship.lateral_vel.x / cfg.max_lateral_speed, absf(roll_z), ship.lateral_vel, roll_z)
 	ui.set_roll_ready(ship.roll_ready())
+	ui.tilt_available = tilt.available()
 	if high_quality:
 		var warp_post: float = fx.warp_level * fx.warp_level * (0.4 if reduced_motion else 1.2)
 		post_mat.set_shader_parameter("intensity", (speed_t * (0.35 if reduced_motion else 1.0) + warp_post) if flying else 0.0)
@@ -479,7 +490,9 @@ func _run_step(delta: float) -> void:
 	if session.state == RunSession.State.TUTORIAL:
 		target_speed = cfg.base_speed
 		_tutorial_t += delta
-		if input.touched_this_run:
+		var steered_once := input.touched_this_run or (tilt.enabled and tilt.available() and tilt.read().length() > 0.3)
+		if steered_once:
+			input.touched_this_run = true
 			ui.show_hint(false)
 		if input.touched_this_run and _tutorial_t > 4.0:
 			session.transition(RunSession.State.RUNNING)
@@ -497,6 +510,12 @@ func _run_step(delta: float) -> void:
 		_on_near_miss(ev)
 	_collect_pickups()
 	ui.set_hud(score.score(), score.distance, ship.forward_speed, score.combo, score.combo_timer / cfg.combo_timeout, cfg.speed_t(ship.forward_speed))
+
+
+func _recalibrate_tilt() -> void:
+	tilt.calibrate()
+	ui.popup("TILT CENTERED", GameUI.CYAN)
+	Sfx.play("chime")
 
 
 func _try_roll(dir: int) -> void:

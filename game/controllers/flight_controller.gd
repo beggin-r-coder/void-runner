@@ -12,6 +12,9 @@ signal rolled(dir: int)
 
 var cfg: HandlingConfig
 var input: InputRouter
+## Optional tilt steering (DashCore TiltInput). When enabled and a sensor is
+## present, tilt drives the target; touch drag is used otherwise.
+var tilt: TiltInput
 var forward_speed: float = 35.0
 var lateral_vel: Vector2 = Vector2.ZERO
 var target: Vector2 = Vector2.ZERO
@@ -124,6 +127,13 @@ func _update_target(delta: float) -> void:
 		_ff = res[1]
 		return
 	if not steering_enabled or input == null:
+		return
+	if tilt != null and tilt.enabled and tilt.available():
+		# absolute mapping: full deflection = edge of the flight envelope
+		var r := tilt.read()
+		var ys := -1.0 if invert_y else 1.0
+		target = clamp_bounds(Vector2(r.x * cfg.bounds_half_width, r.y * ys * cfg.bounds_half_height))
+		_anchor_ship = target
 		return
 	if input.active:
 		var off := input.drag_offset()

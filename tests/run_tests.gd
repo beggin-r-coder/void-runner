@@ -25,6 +25,7 @@ func _initialize() -> void:
 	if _want("reach"): test_reachability()
 	if _want("bot"): test_bot_survival()
 	if _want("decor"): test_decor_envelope()
+	if _want("tilt"): test_tilt_math()
 	if _want("pool"): test_pool_cycling()
 	if _want("save"): test_save_store()
 	if _want("sweep"): await test_swept_collision()
@@ -303,6 +304,37 @@ func test_decor_envelope() -> void:
 			d.free()
 		check(bad == 0, "%s (%d layouts): no decoration inside the envelope%s" % [(themes[ti] as ThemeProfile).display_name, 25, "" if bad == 0 else "  e.g. " + worst])
 	dresser.free()
+
+
+## Tilt is measured relative to the calibrated holding angle, so the same
+## physical tilt must read the same whether the phone is upright or flat.
+func test_tilt_math() -> void:
+	print("[tilt steering]")
+	var worst := 0.0
+	var signs_ok := true
+	for p in [0.0, 30.0, 60.0, 85.0]:
+		var ref := TiltInput.simulated_gravity(p, 0.0).normalized()
+		var right := TiltInput.tilt_angles(ref, TiltInput.simulated_gravity(p, 10.0).normalized())
+		var left := TiltInput.tilt_angles(ref, TiltInput.simulated_gravity(p, -10.0).normalized())
+		var away := TiltInput.tilt_angles(ref, TiltInput.simulated_gravity(p + 10.0, 0.0).normalized())
+		worst = maxf(worst, absf(rad_to_deg(right.x) - 10.0))
+		worst = maxf(worst, absf(rad_to_deg(away.y) + 10.0))
+		signs_ok = signs_ok and right.x > 0.0 and left.x < 0.0 and away.y < 0.0 and absf(right.y) < 0.05 and absf(away.x) < 0.05
+	check(signs_ok, "right edge down steers right, left steers left, top-away steers down (all holding angles)")
+	check(worst < 1.5, "10 deg tilt reads 10 deg at 0/30/60/85 deg holding angles (worst error %.2f deg)" % worst)
+	var t := TiltInput.new()
+	t.sensitivity = 0.5
+	t.override_gravity = TiltInput.simulated_gravity(40.0, 0.0)
+	t.calibrate()
+	t.override_gravity = TiltInput.simulated_gravity(40.0, 1.5)
+	t._physics_process(1.0)
+	var dz := t.read()
+	t.override_gravity = TiltInput.simulated_gravity(40.0, 40.0)
+	t._physics_process(1.0)
+	var full := t.read()
+	check(dz == Vector2.ZERO, "tilts inside the 2 deg dead zone are ignored")
+	check(is_equal_approx(full.x, 1.0), "tilting past the max angle clamps to full deflection")
+	t.free()
 
 
 func test_pool_cycling() -> void:

@@ -11,6 +11,7 @@ signal menu_pressed
 signal pause_pressed
 signal resume_pressed
 signal roll_pressed(dir: int)
+signal recalibrate_pressed
 signal hangar_toggled(open: bool)
 signal livery_selected(id: String)
 signal setting_changed(key: String, value: Variant)
@@ -62,6 +63,13 @@ var _hangar_status: Label
 var _hangar_action: Button
 var _hangar_index: int = 0
 var _toggles: Dictionary = {}
+## Set by the game each frame: whether a motion sensor is delivering data.
+var tilt_available: bool = false
+var _tilt_note: Label
+var _tilt_row: Control
+var _recal_btn: Button
+var _hint_main: Label
+var _hint_sub: Label
 ## Every interactive control, keyed "screen:label" (used by the dev harness to click them).
 var buttons: Dictionary = {}
 var _building: String = ""
@@ -301,8 +309,10 @@ func _build_hud() -> void:
 	# tutorial hint
 	var hv := _vbox(2)
 	var h1 := UIKit.label("DRAG ANYWHERE TO STEER", 26, UIKit.TEXT, 6, 0.45)
+	_hint_main = h1
 	h1.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	var h2 := UIKit.label("TAP  ROLL  TO DODGE SIDEWAYS", 16, Color(CYAN, 0.9), 6, 0.3)
+	_hint_sub = h2
 	h2.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	hv.add_child(h1)
 	hv.add_child(h2)
@@ -364,6 +374,8 @@ func set_countdown(text: String) -> void:
 
 
 func show_hint(v: bool) -> void:
+	var tilt_on := bool(Save.setting("tilt")) and tilt_available
+	_hint_main.text = "TILT YOUR PHONE TO STEER" if tilt_on else "DRAG ANYWHERE TO STEER"
 	_hint.visible = v
 
 
@@ -456,6 +468,8 @@ func _build_pause() -> void:
 	var vb := _vbox(14)
 	vb.add_child(_header("PAUSED"))
 	vb.add_child(_primary(_button("RESUME", func() -> void: resume_pressed.emit(), Vector2(340, 70))))
+	_recal_btn = _button("RECALIBRATE TILT", func() -> void: recalibrate_pressed.emit(), Vector2(340, 62))
+	vb.add_child(_recal_btn)
 	vb.add_child(_button("RESTART", func() -> void: retry_pressed.emit(), Vector2(340, 62)))
 	var open_settings := func() -> void:
 		_settings_from_pause = true
@@ -472,18 +486,38 @@ func _build_settings() -> void:
 	var panel := UIKit.SciPanel.new()
 	var vb := _vbox(10)
 	vb.add_child(_header("SETTINGS"))
-	for entry in [["reduced_motion", "REDUCED MOTION"], ["invert_y", "INVERT VERTICAL"], ["high_quality", "HIGH QUALITY EFFECTS"], ["haptics", "HAPTICS"]]:
+	for entry in [["tilt", "TILT STEERING"], ["reduced_motion", "REDUCED MOTION"], ["invert_y", "INVERT VERTICAL"], ["high_quality", "HIGH QUALITY EFFECTS"], ["haptics", "HAPTICS"]]:
 		var key: String = entry[0]
 		var cbtn := CheckButton.new()
 		cbtn.text = entry[1]
-		cbtn.custom_minimum_size = Vector2(460, 54)
+		cbtn.custom_minimum_size = Vector2(460, 48)
 		var on_toggled := func(on: bool) -> void:
 			Sfx.play("click")
 			setting_changed.emit(key, on)
+			if key == "tilt":
+				_refresh_tilt_rows(on)
 		cbtn.toggled.connect(on_toggled)
 		vb.add_child(cbtn)
 		_toggles[key] = cbtn
 		buttons["settings:" + key] = cbtn
+		if key == "tilt":
+			_tilt_row = HBoxContainer.new()
+			_tilt_row.add_theme_constant_override("separation", 18)
+			var tl := UIKit.label("TILT SENSITIVITY", 16, UIKit.TEXT_DIM, 3, 0.2)
+			_tilt_row.add_child(tl)
+			var ts := HSlider.new()
+			ts.min_value = 0.0
+			ts.max_value = 1.0
+			ts.step = 0.05
+			ts.custom_minimum_size = Vector2(200, 40)
+			ts.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+			ts.value_changed.connect(func(v: float) -> void: setting_changed.emit("tilt_sensitivity", v))
+			_tilt_row.add_child(ts)
+			vb.add_child(_tilt_row)
+			_toggles["tilt_sensitivity"] = ts
+			buttons["settings:tilt_sensitivity"] = ts
+			_tilt_note = UIKit.label("NO MOTION SENSOR FOUND - USING TOUCH", 13, UIKit.GOLD, 3, 0.2)
+			vb.add_child(_tilt_note)
 	var row := HBoxContainer.new()
 	row.add_theme_constant_override("separation", 18)
 	var vl := UIKit.label("EFFECTS VOLUME", 18, UIKit.TEXT_DIM, 3, 0.2)
@@ -492,7 +526,7 @@ func _build_settings() -> void:
 	slider.min_value = 0.0
 	slider.max_value = 1.0
 	slider.step = 0.05
-	slider.custom_minimum_size = Vector2(200, 48)
+	slider.custom_minimum_size = Vector2(200, 40)
 	slider.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	slider.value_changed.connect(func(v: float) -> void: setting_changed.emit("sfx_volume", v))
 	row.add_child(slider)
@@ -511,6 +545,15 @@ func sync_settings(s: Dictionary) -> void:
 	(_toggles["high_quality"] as CheckButton).set_pressed_no_signal(str(s.get("quality", "high")) == "high")
 	(_toggles["haptics"] as CheckButton).set_pressed_no_signal(bool(s.get("haptics", true)))
 	(_toggles["sfx_volume"] as HSlider).set_value_no_signal(float(s.get("sfx_volume", 0.9)))
+	(_toggles["tilt"] as CheckButton).set_pressed_no_signal(bool(s.get("tilt", false)))
+	(_toggles["tilt_sensitivity"] as HSlider).set_value_no_signal(float(s.get("tilt_sensitivity", 0.5)))
+	_refresh_tilt_rows(bool(s.get("tilt", false)))
+
+
+func _refresh_tilt_rows(on: bool) -> void:
+	_tilt_row.visible = on
+	_tilt_note.visible = on and not tilt_available
+	_recal_btn.visible = on and tilt_available
 
 
 func _build_hangar() -> void:
@@ -670,7 +713,7 @@ func show_screen(screen_name: String) -> void:
 	if screen_name == "hangar":
 		_hangar_index = maxi(ShipBuilder.ORDER.find(Save.data["livery"]), 0)
 		refresh_hangar()
-	if screen_name == "settings":
+	if screen_name == "settings" or screen_name == "pause":
 		sync_settings(Save.data["settings"])
 	if screen_name != "hud":
 		_countdown.text = ""

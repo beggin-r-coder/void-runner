@@ -20,6 +20,8 @@ extends Node
 ##   --autopilot        runs are flown by the RouteFollower (invulnerable unless --soak)
 ##   --soak=N           N run/retry cycles with the physics autopilot, pool leak check
 ##   --soak-distance=M  distance that counts as a survived soak run (default 2500)
+##   --tilt             tilt steering setting on (with no sensor: falls back to touch)
+##   --fake-tilt=P,R    simulate a phone held at pitch P deg, rolled R deg (desktop testing of tilt)
 
 ## Built in setup(): fixed head/tail plus one milestone per difficulty band
 ## and per world (sector), in distance order, then a loop back to world 1.
@@ -83,6 +85,12 @@ func setup(p_game: Node) -> void:
 	for key in ["brake_factor", "steer_jerk", "steer_response", "input_smooth_min", "input_smooth_max"]:
 		if flags.has(key):
 			game.cfg.set(key, float(flags[key]))
+	if flags.has("tilt"):
+		Save.data["settings"]["tilt"] = true
+	if flags.has("fake-tilt"):
+		var pr := str(flags["fake-tilt"]).split(",")
+		game.tilt.override_gravity = TiltInput.simulated_gravity(float(pr[0]), float(pr[1]) if pr.size() > 1 else 0.0)
+		Save.data["settings"]["tilt"] = true
 	if flags.has("autopilot"):
 		game.autopilot_runs = true
 		game.invulnerable_runs = true
@@ -121,7 +129,7 @@ func _build_stages() -> void:
 	STAGES.assign(["boot", "launch", "steer", "roll", "running", "band1", "pause"])
 	for m in _milestones:
 		STAGES.append(m[0])
-	STAGES.append_array(["crash", "results", "hangar", "settings", "retry"])
+	STAGES.append_array(["crash", "results", "hangar", "settings", "retry", "tilt"])
 	_until = STAGES.size() - 1
 
 
@@ -423,16 +431,40 @@ func _autotest() -> void:
 	var on: bool = Save.setting("reduced_motion") == true and g.cam.reduced_motion
 	await click(toggle)
 	var off: bool = Save.setting("reduced_motion") == false and not g.cam.reduced_motion
-	status(_si("settings"), ui.settings_panel.visible and on and off)
+	var tilt_toggle: CheckButton = ui.buttons["settings:tilt"]
+	await click(tilt_toggle)
+	var tilt_on: bool = Save.setting("tilt") == true and g.tilt.enabled
+	status(_si("settings"), ui.settings_panel.visible and on and off and tilt_on, "reduced motion on/off, tilt switched on=%s" % tilt_on)
 	await click(ui.buttons["settings:DONE"])
 	if await _stop_if_until(_si("settings")): return
 
+	g.tilt.override_gravity = TiltInput.simulated_gravity(30.0, 0.0)
 	# 15 retry: second launch skips the tutorial and goes through the countdown
 	await click(ui.buttons["menu:tap"])
 	var countdown: bool = g.session.state == RunSession.State.COUNTDOWN
 	var live := await _wait(func() -> bool: return g.session.state == RunSession.State.RUNNING, 10.0)
 	status(_si("retry"), countdown and live and ui.hud.visible)
-	await _stop_if_until(_si("retry"))
+	if await _stop_if_until(_si("retry")): return
+
+	# tilt: simulated sensor - roll right/left, pitch away, then recalibrate via the pause menu
+	g.ship.invulnerable = true
+	var hold := 30.0
+	g.tilt.override_gravity = TiltInput.simulated_gravity(hold, 15.0)
+	var went_right := await _wait(func() -> bool: return g.ship.position.x > 3.5, 3.0)
+	g.tilt.override_gravity = TiltInput.simulated_gravity(hold, -15.0)
+	var went_left := await _wait(func() -> bool: return g.ship.position.x < -3.5, 3.0)
+	g.tilt.override_gravity = TiltInput.simulated_gravity(hold + 12.0, 0.0)
+	var went_down := await _wait(func() -> bool: return g.ship.position.y < -1.5, 3.0)
+	# player now holds the phone rolled 15 deg right: recalibrate makes that neutral
+	g.tilt.override_gravity = TiltInput.simulated_gravity(hold, 15.0)
+	await click(ui.buttons["hud:II"])
+	var recal_visible: bool = ui.buttons["pause:RECALIBRATE TILT"].visible
+	await click(ui.buttons["pause:RECALIBRATE TILT"])
+	await click(ui.buttons["pause:RESUME"])
+	var centered := await _wait(func() -> bool: return absf(g.ship.position.x) < 0.8 and absf(g.ship.position.y) < 0.8, 3.0)
+	g.tilt.override_gravity = Vector3.ZERO
+	status(_si("tilt"), went_right and went_left and went_down and recal_visible and centered, "right=%s left=%s down=%s recalibrate_button=%s recentred=%s" % [went_right, went_left, went_down, recal_visible, centered])
+	await _stop_if_until(_si("tilt"))
 
 
 # --- steering trace (smoothness measurement) -------------------------------------

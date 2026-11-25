@@ -26,6 +26,8 @@ const DEFAULTS := {
 		"quality": "high",
 		"sfx_volume": 0.9,
 		"haptics": true,
+		"tilt": false,
+		"tilt_sensitivity": 0.5,
 	},
 }
 

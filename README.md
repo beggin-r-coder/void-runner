@@ -15,6 +15,8 @@ DashPanda Studios · Android · Godot 4.7.2 (pinned) · typed GDScript · landsc
 
 ![Fluid engine plume, consecutive frames](media/engine_plume.jpg)
 
+![Tilt steering settings, recalibrate and hint](media/tilt_steering.jpg)
+
 ![Steering before vs after](media/steering_smoothness.png)
 
 ▶ Same scripted drags, old vs new steering side by side: [`media/steering_before_after.mp4`](media/steering_before_after.mp4)
@@ -35,6 +37,7 @@ DashPanda Studios · Android · Godot 4.7.2 (pinned) · typed GDScript · landsc
 | Decoration never enters the flight envelope (every vertex, every world, 25 random layouts each) | ✅ `run_tests.gd` → decor |
 | Scoring contract `floor(distance) + Σ 40 × combo`, combo ≤ 5, 4 s expiry, one payout per obstacle id | ✅ tested |
 | Near-miss feedback: popup, combo chevrons, sparks, FOV kick, hit-stop, whoosh, haptics | ✅ |
+| Tilt steering (gyro/gravity sensor), toggle + sensitivity in Settings, auto-calibration per run, recalibrate in pause, touch fallback without a sensor | ✅ unit test + autotest stage `tilt` (simulated sensor) |
 | Interceptor ship: faceted lofted fuselage with glowing chines, gem-cut canopy, cranked arrow wings with lit leading edges and livery chevrons, anhedral tip fins, swept twin tails, lofted engine pods with intakes; two-tone hull shader with panel lines and spine stripe | ✅ |
 | Thrusters: petal nozzles that iris open with throttle, spinning glowing turbines, surge heat rings, wingtip RCS jets that fire on lateral acceleration, red/green nav lights and a double-flash strobe | ✅ |
 | Fluid engine plume: swept plume mesh + flow shader (turbulence streaming back, travelling-wave undulation, breathing radius, shock diamonds, white-hot→livery gradient), soft heat sheath, tail that lags lateral motion (spring), eased length, thrust surges on launch / roll / near miss | ✅ |
@@ -58,6 +61,12 @@ third-party assets, so the asset register is clean (`docs/ASSET_REGISTER.md`).
 
 1. Install **Godot 4.7.2-stable** (standard build).
 2. Open `project.godot` (first open imports the project), press **F5**.
+
+**Tilt steering (optional, Settings → TILT STEERING):** tilt the phone to steer - roll right/left moves
+sideways, tilting the top edge away/toward moves down/up (Invert vertical flips it). Whatever angle you
+hold the phone at when a run starts is "level"; **RECALIBRATE TILT** in the pause menu re-centres it.
+TILT SENSITIVITY sets how far you need to tilt (34 deg → 12 deg for full deflection). Without a motion
+sensor the game falls back to touch and says so.
 
 Touch: drag anywhere to steer; tap the **ROLL** thumb buttons (bottom corners) for a barrel roll -
 a 360 deg dodge that sidesteps ~4.5 m (0.9 s cooldown; works as a second finger while steering).
@@ -144,6 +153,8 @@ ffmpeg -i /tmp/tour.avi -af volumedetect -vn -f null -
 | `--quality=low\|high`, `--reduced-motion`, `--invert-y` | Settings overrides (in-memory with `--fresh`) |
 | `--autopilot` | Runs flown by the route follower (invulnerable) |
 | `--soak=N`, `--soak-distance=M` | Soak test |
+| `--tilt` | Turn the tilt-steering setting on (no sensor on desktop → touch fallback note) |
+| `--fake-tilt=P,R` | Simulate a phone held reclined P deg and rolled R deg (drives tilt steering on desktop) |
 | `--trace-steer=CSV` | Scripted touch drags (steps + shaky hold) logged per physics frame: t, target, filtered target, x, vx, ax |
 | `--legacy-steer` | Use the old (non-smoothed) steering response, for comparisons |
 | `--brake_factor= --steer_jerk= --steer_response= --input_smooth_min= --input_smooth_max=` | Override smoothing tuning without rebuilding |
