@@ -11,5 +11,8 @@
 6. For store builds: Gradle build + AAB, confirm target API ≥ 36, test the signed AAB through a Play
    testing track (guide p.11).
 
-Not yet verified in this repository: an actual APK export (no Android SDK / templates on the CI
-machine used to create this build).
+One-command release build: `tools/build_apk.sh` (see the header for the required environment
+variables). Build 0.1.0 was exported and verified this way.
+
+Sideload: copy the APK to the phone and open it (allow "install unknown apps" for your file
+manager), or `adb install -r VoidRunner-0.1.0.apk`.
