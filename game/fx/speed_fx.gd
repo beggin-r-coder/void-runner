@@ -18,6 +18,15 @@ var _throttle: float = 0.8
 var _bend: Vector2 = Vector2.ZERO
 var _bend_v: Vector2 = Vector2.ZERO
 var _surge: float = 0.0
+# ship detail animation
+var petals: Array = []
+var turbines: Array = []
+var heat_rings: Array = []
+var strobes: Array = []
+var rcs: Dictionary = {}
+var _rcs_level: Vector2 = Vector2.ZERO  # x = left jet, y = right jet
+var _prev_lat_vel: Vector2 = Vector2.ZERO
+var _anim_t: float = 0.0
 
 
 ## Momentary thrust surge (roll, near miss, launch): longer, brighter plume.
@@ -78,6 +87,11 @@ func attach_ship(ship_parts: Dictionary, mats: GameMaterials, world: Node3D) -> 
 		s.queue_free()
 	sparks.clear()
 	flames = ship_parts["flames"]
+	petals = ship_parts.get("petals", [])
+	turbines = ship_parts.get("turbines", [])
+	heat_rings = ship_parts.get("heat_rings", [])
+	strobes = ship_parts.get("strobes", [])
+	rcs = ship_parts.get("rcs", {})
 	var accent: Color = ship_parts["accent"]
 	var flame_col: Color = ship_parts["flame_color"]
 	for tip in ship_parts["wingtips"]:
@@ -123,6 +137,38 @@ func attach_ship(ship_parts: Dictionary, mats: GameMaterials, world: Node3D) -> 
 		sp.visibility_aabb = AABB(Vector3(-20, -20, -20), Vector3(40, 40, 80))
 		(nz as Node3D).add_child(sp)
 		sparks.append(sp)
+
+
+func _animate_ship(delta: float, speed_t: float, flying: bool, lat_vel: Vector2) -> void:
+	_anim_t += delta
+	var th := _throttle
+	# petal nozzles iris open with throttle and surges
+	var open := deg_to_rad(3.0 + 13.0 * clampf(th - 0.4, 0.0, 1.2))
+	for h in petals:
+		(h as Node3D).rotation.x = lerpf((h as Node3D).rotation.x, -open, 1.0 - exp(-8.0 * delta))
+	for t in turbines:
+		(t as Node3D).rotation.z += delta * (6.0 + 34.0 * th)
+	for r in heat_rings:
+		var m := (r as MeshInstance3D).material_override as ShaderMaterial
+		m.set_shader_parameter("energy", 0.8 + 1.4 * speed_t + 6.0 * _surge)
+		(r as Node3D).scale = Vector3.ONE * (1.0 + 0.25 * _surge)
+	# RCS: accelerating right fires the left wingtip jet (pushing), and vice versa
+	var acc := (lat_vel - _prev_lat_vel) / maxf(delta, 0.0001)
+	_prev_lat_vel = lat_vel
+	var goal := Vector2(clampf(acc.x / 110.0, 0.0, 1.0), clampf(-acc.x / 110.0, 0.0, 1.0)) if flying else Vector2.ZERO
+	_rcs_level = _rcs_level.lerp(goal, 1.0 - exp(-(22.0 if goal.length() > _rcs_level.length() else 9.0) * delta))
+	for side in ["left", "right"]:
+		if not rcs.has(side):
+			continue
+		var jet: MeshInstance3D = rcs[side]
+		var lvl := _rcs_level.x if side == "left" else _rcs_level.y
+		jet.visible = lvl > 0.04
+		jet.scale = Vector3(0.05, 0.05, 0.08 + 0.75 * lvl)
+		(jet.material_override as ShaderMaterial).set_shader_parameter("throttle", 0.4 + 1.2 * lvl)
+	# anti-collision strobe: double flash every 1.4 s
+	var ph := fmod(_anim_t, 1.4)
+	for st in strobes:
+		(st as Node3D).visible = ph < 0.05 or (ph > 0.14 and ph < 0.19)
 
 
 func set_theme_color(c: Color) -> void:
@@ -186,6 +232,7 @@ func update_fx(speed_t: float, flying: bool, delta: float, lateral: float = 0.0,
 			if m:
 				(m as ShaderMaterial).set_shader_parameter("bend", _bend)
 				(m as ShaderMaterial).set_shader_parameter("throttle", _throttle * (1.0 + flare * 0.3))
+	_animate_ship(delta, speed_t, flying, lat_vel)
 	# wingtip vapour brightens in hard banks and rolls
 	for i in mini(2, trails.size()):
 		var m := trails[i].material_override as ShaderMaterial

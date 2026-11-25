@@ -338,6 +338,60 @@ static func extrude(poly: PackedVector2Array, thickness: float) -> ArrayMesh:
 	return st.commit()
 
 
+## Faceted loft: sweeps a closed 2D profile (x, y in -1..1) through sections
+## [z, half_width, half_height, y_offset] along the ship axis. Flat-shaded for
+## a crisp, stealthy look; caps close both ends.
+static func loft(sections: Array, profile: PackedVector2Array, cap: bool = true) -> ArrayMesh:
+	var st := SurfaceTool.new()
+	st.begin(Mesh.PRIMITIVE_TRIANGLES)
+	var rings: Array = []
+	var centers: Array[Vector3] = []
+	for sec in sections:
+		var ring := PackedVector3Array()
+		var z: float = sec[0]
+		var w: float = sec[1]
+		var h: float = sec[2]
+		var yo: float = sec[3] if sec.size() > 3 else 0.0
+		for p in profile:
+			ring.append(Vector3(p.x * w, p.y * h + yo, z))
+		rings.append(ring)
+		centers.append(Vector3(0.0, yo, z))
+	var n := profile.size()
+	var zlen := absf(float(sections[sections.size() - 1][0]) - float(sections[0][0]))
+	for k in rings.size() - 1:
+		var r0: PackedVector3Array = rings[k]
+		var r1: PackedVector3Array = rings[k + 1]
+		var c := (centers[k] + centers[k + 1]) * 0.5
+		for i in n:
+			var a := r0[i]
+			var b := r0[(i + 1) % n]
+			var cc := r1[(i + 1) % n]
+			var d := r1[i]
+			var out := ((a + b + cc + d) * 0.25 - c)
+			out.z = 0.0
+			st.set_uv(Vector2(float(i) / n, (a.z - float(sections[0][0])) / zlen))
+			_tri_st(st, a, b, cc, out)
+			_tri_st(st, a, cc, d, out)
+	if cap:
+		for end in [0, rings.size() - 1]:
+			var ring2: PackedVector3Array = rings[end]
+			var ctr := centers[end]
+			var dirz := Vector3(0, 0, -1) if end == 0 else Vector3(0, 0, 1)
+			for i in n:
+				_tri_st(st, ctr, ring2[i], ring2[(i + 1) % n], dirz)
+	st.generate_normals()
+	return st.commit()
+
+
+## Regular polygon profile (for round-ish lofts), optionally squashed.
+static func ngon(count: int, rot: float = 0.0) -> PackedVector2Array:
+	var out := PackedVector2Array()
+	for i in count:
+		var a := TAU * i / count + rot
+		out.append(Vector2(cos(a), sin(a)))
+	return out
+
+
 ## Engine plume: surface of revolution along +Z (nozzle at z=0, tail at z=1),
 ## radius 1 at the nozzle, slight bulge just behind it, then a soft taper.
 ## UV.y runs 0 (nozzle) -> 1 (tail) for the flame shader.

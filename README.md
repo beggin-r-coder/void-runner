@@ -9,6 +9,8 @@ DashPanda Studios · Android · Godot 4.7.2 (pinned) · typed GDScript · landsc
 
 ![Screens](media/screens_grid.jpg)
 
+![Liveries: NOVA, EMBER, PHANTOM](media/liveries.jpg)
+
 ![Barrel roll and banking](media/ship_motion.jpg)
 
 ![Fluid engine plume, consecutive frames](media/engine_plume.jpg)
@@ -32,6 +34,8 @@ DashPanda Studios · Android · Godot 4.7.2 (pinned) · typed GDScript · landsc
 | 3 visual sectors that cross-fade: **Crimson Reach** (alien canyon planet), **Shattered Belt** (asteroid field), **Silent Spires** (abandoned megastructure) | ✅ |
 | Scoring contract `floor(distance) + Σ 40 × combo`, combo ≤ 5, 4 s expiry, one payout per obstacle id | ✅ tested |
 | Near-miss feedback: popup, combo chevrons, sparks, FOV kick, hit-stop, whoosh, haptics | ✅ |
+| Interceptor ship: faceted lofted fuselage with glowing chines, gem-cut canopy, cranked arrow wings with lit leading edges and livery chevrons, anhedral tip fins, swept twin tails, lofted engine pods with intakes; two-tone hull shader with panel lines and spine stripe | ✅ |
+| Thrusters: petal nozzles that iris open with throttle, spinning glowing turbines, surge heat rings, wingtip RCS jets that fire on lateral acceleration, red/green nav lights and a double-flash strobe | ✅ |
 | Fluid engine plume: swept plume mesh + flow shader (turbulence streaming back, travelling-wave undulation, breathing radius, shock diamonds, white-hot→livery gradient), soft heat sheath, tail that lags lateral motion (spring), eased length, thrust surges on launch / roll / near miss | ✅ |
 | Smooth steering: adaptive touch filter, eased braking-curve arrival, jerk-limited acceleration (RMS jerk 6× lower, shaky-thumb jitter 6× lower, overshoot halved vs legacy); spring camera with turn lead, noise-based shake, springy FOV; eased hit-stop / slow-mo | ✅ measured with `--trace-steer` |
 | Ship motion: spring-driven bank with anticipation and overshoot, yaw into turns, pitch, idle hover, differential engine flare, wingtip vapour that brightens in hard banks | ✅ |
